@@ -4,7 +4,55 @@ import { useApp } from '../state/AppContext';
 import { Card, Field, Modal } from '../components/ui';
 import { fmtDate, today } from '../lib/calc';
 import { generateDayPlan } from '../lib/scheduler';
+import { mergeCalendarEvents, syncCalendarFeed } from '../lib/ical';
 import type { CalendarEvent, EventType } from '../types';
+
+function CalendarFeedCard() {
+  const { data, update, celebrate } = useApp();
+  const [url, setUrl] = useState(data.icalUrl ?? '');
+  const [busy, setBusy] = useState(false);
+  const [msg, setMsg] = useState<string | null>(null);
+  const importedCount = data.events.filter(e => e.id.startsWith('ical-')).length;
+
+  const sync = async (feedUrl: string) => {
+    setBusy(true); setMsg(null);
+    try {
+      const imported = await syncCalendarFeed(feedUrl);
+      update(d => ({ ...mergeCalendarEvents(d, imported), icalUrl: feedUrl }));
+      celebrate(`📅 Calendar synced — ${imported.length} events imported`);
+    } catch (e) {
+      setMsg(`⚠️ ${(e as Error).message}`);
+    }
+    setBusy(false);
+  };
+
+  return (
+    <Card title="Real calendar feed" action={importedCount > 0 ? <span className="badge badge-green">{importedCount} SYNCED</span> : undefined}>
+      <p className="small muted" style={{ marginTop: 0 }}>
+        Paste your calendar's <strong>secret iCal address</strong> and your real meetings flow into the planner.
+        Google: calendar Settings → "Secret address in iCal format" · Apple: iCloud calendar → share → Public Calendar
+        · Outlook: Settings → Shared calendars → ICS link. (SETUP.md Part 3 has details.)
+      </p>
+      <div className="form-row">
+        <input placeholder="https://calendar.google.com/calendar/ical/…/basic.ics" value={url} onChange={e => setUrl(e.target.value)} />
+        <button className="btn" disabled={busy || !url} onClick={() => sync(url)} style={{ maxWidth: 130 }}>
+          {busy ? 'Syncing…' : 'Sync now'}
+        </button>
+      </div>
+      {data.icalUrl && (
+        <div className="flex mt-8">
+          <button className="btn btn-sm btn-secondary" disabled={busy} onClick={() => sync(data.icalUrl!)}>Refresh</button>
+          <button className="btn btn-sm btn-secondary" onClick={() => {
+            update(d => ({ ...d, icalUrl: undefined, events: d.events.filter(e => !e.id.startsWith('ical-')) }));
+            setUrl('');
+            celebrate('Calendar feed removed');
+          }}>Remove feed</button>
+        </div>
+      )}
+      {msg && <p className="small mt-8">{msg}</p>}
+    </Card>
+  );
+}
 
 const uid = () => `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
 const toMin = (t: string) => { const [h, m] = t.split(':').map(Number); return h * 60 + m; };
@@ -73,9 +121,10 @@ export default function Schedule() {
         </div>
       </div>
 
+      <CalendarFeedCard />
+
       <Card>
         <p className="small muted" style={{ marginTop: 0 }}>
-          🔗 Google / Apple / Outlook calendar sync plugs into the same CalendarEvent model — for now events are manual or demo-imported.
           Dashed blocks are AI suggestions built from your recovery score, training history and free gaps; click <strong>✓ accept</strong> to commit one.
         </p>
         {plan.busyScore >= 5 && <p className="small">⚠️ <strong>{Math.round(plan.busyScore)}h of meetings today</strong> — suggestions favor a shorter workout and simpler meals.</p>}

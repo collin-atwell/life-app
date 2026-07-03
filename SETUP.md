@@ -96,6 +96,43 @@ Supabase gives you a hosted Postgres database + user accounts. The free tier
 
 ---
 
+## Part 3: Real calendar sync (needs Part 2, ≈10 min)
+
+Your Google / Apple / Outlook calendar can feed the schedule planner via its
+**secret iCal address**. Browsers can't fetch those URLs directly, so a tiny proxy
+function runs in your Supabase project (code already written:
+[`supabase/functions/calendar-proxy/index.ts`](supabase/functions/calendar-proxy/index.ts)).
+
+1. **Deploy the proxy.** In the Supabase dashboard: **Edge Functions →
+   Deploy a new function → Via Editor**. Name it exactly `calendar-proxy`, replace the
+   sample code with the contents of `supabase/functions/calendar-proxy/index.ts`,
+   click **Deploy**.
+
+2. **Get your calendar's secret address:**
+   - **Google Calendar** (calendar.google.com on desktop): ⚙️ Settings → click your
+     calendar in the left list → scroll to **Integrate calendar** → copy
+     **"Secret address in iCal format"** (ends in `.ics`).
+   - **Apple / iCloud**: on iPhone, Calendar app → Calendars → ⓘ next to the calendar →
+     enable **Public Calendar** → Share Link (a `webcal://` URL — paste as-is).
+   - **Outlook**: Settings → Calendar → **Shared calendars** → publish a calendar →
+     copy the **ICS** link.
+
+3. **Connect it.** In Health Hub: **Plan tab → Real calendar feed** → paste the URL →
+   **Sync now**. Your meetings (including weekly recurring ones) import for a
+   6-week window and the AI planner schedules workouts/meals/recovery around them.
+   Hit **Refresh** whenever your calendar changes.
+
+⚠️ Treat the secret URL like a password — anyone who has it can read that calendar.
+(It's stored inside your app data, so it syncs to your other devices via Part 2.)
+
+### What about Apple Health data?
+
+Web apps can't access HealthKit directly (Apple restricts it to native iOS apps) — no
+backend changes that. The practical path: a bridge app like **Health Auto Export**
+(App Store) can POST your sleep/HR/HRV/steps to a Supabase endpoint on a schedule;
+the app's `SleepEntry` model already has the fields. Ask Claude to build the
+receiving endpoint when you're ready.
+
 ## Later (needs the backend above, ~30 extra min when you want it)
 
 **Push notifications with the app closed** — the service worker already listens for

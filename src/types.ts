@@ -237,4 +237,6 @@ export interface AppData {
   events: CalendarEvent[];
   waterUnit: 'oz' | 'ml' | 'cups';
   notifPrefs: NotifPrefs;
+  /** Secret iCal feed URL (Google/Apple/Outlook) — synced via Schedule tab. */
+  icalUrl?: string;
 }
