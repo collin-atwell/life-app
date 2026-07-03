@@ -1,40 +1,103 @@
 import { useMemo, useState } from 'react';
 import { addDays, format, parseISO } from 'date-fns';
 import { useApp } from '../state/AppContext';
-import { Card, Field, Modal } from '../components/ui';
+import { Card, Chip, Field, Modal } from '../components/ui';
 import { fmtDate, today } from '../lib/calc';
 import { generateDayPlan } from '../lib/scheduler';
 import { mergeCalendarEvents, syncCalendarFeed } from '../lib/ical';
 import type { CalendarEvent, EventType } from '../types';
+
+const PROVIDER_GUIDES: Record<string, { label: string; steps: string[]; looksLike: string }> = {
+  apple: {
+    label: ' Apple / iCloud',
+    steps: [
+      'On your iPhone, open the Calendar app',
+      'Tap "Calendars" at the bottom of the screen',
+      'Find the calendar you want under the ICLOUD heading and tap the ⓘ next to it (only iCloud calendars can be linked — Gmail/work calendars listed in the Apple app won\'t offer this)',
+      'Scroll down and turn ON "Public Calendar"',
+      'Tap "Share Link…" → "Copy"',
+      'Paste it below — webcal:// links work as-is',
+    ],
+    looksLike: 'webcal://p12-caldav.icloud.com/published/2/…',
+  },
+  google: {
+    label: 'Google',
+    steps: [
+      'On a computer, open calendar.google.com',
+      'Click the ⚙️ gear (top right) → "Settings"',
+      'In the left sidebar under "Settings for my calendars", click your calendar\'s name',
+      'Scroll down to the "Integrate calendar" section',
+      'Copy the "Secret address in iCal format" (click the copy icon next to it)',
+    ],
+    looksLike: 'https://calendar.google.com/calendar/ical/…/private-…/basic.ics',
+  },
+  outlook: {
+    label: 'Outlook',
+    steps: [
+      'On a computer, open outlook.com (or outlook.office.com for work)',
+      'Click the ⚙️ gear → "Calendar" → "Shared calendars"',
+      'Under "Publish a calendar": choose your calendar + "Can view all details", click "Publish"',
+      'Copy the ICS link (not the HTML one)',
+    ],
+    looksLike: 'https://outlook.live.com/owa/calendar/…/calendar.ics',
+  },
+};
+
+/** Catch the most common wrong-link pastes before hitting the network. */
+function linkProblem(u: string): string | null {
+  const url = u.trim();
+  if (/icloud\.com\/calendar/i.test(url)) return 'That\'s the iCloud calendar *website* address. You need the Public Calendar share link — it starts with webcal://…caldav.icloud.com/published/. Follow the Apple steps above.';
+  if (/calendar\.google\.com/i.test(url) && !/\.ics(\?|$)/i.test(url)) return 'That looks like the Google Calendar *webpage*. You need the "Secret address in iCal format" from the calendar\'s settings — it ends in .ics. Follow the Google steps above.';
+  if (/supabase\.co/i.test(url)) return 'That\'s your Supabase address, not a calendar link — paste your calendar\'s iCal feed URL instead.';
+  if (!/^(webcal|https?):\/\//i.test(url)) return 'The link should start with webcal:// or https:// — copy the whole address.';
+  return null;
+}
 
 function CalendarFeedCard() {
   const { data, update, celebrate } = useApp();
   const [url, setUrl] = useState(data.icalUrl ?? '');
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState<string | null>(null);
+  const [guide, setGuide] = useState<string | null>(data.icalUrl ? null : 'apple');
   const importedCount = data.events.filter(e => e.id.startsWith('ical-')).length;
 
   const sync = async (feedUrl: string) => {
+    const problem = linkProblem(feedUrl);
+    if (problem) { setMsg(`⚠️ ${problem}`); return; }
     setBusy(true); setMsg(null);
     try {
       const imported = await syncCalendarFeed(feedUrl);
       update(d => ({ ...mergeCalendarEvents(d, imported), icalUrl: feedUrl }));
       celebrate(`📅 Calendar synced — ${imported.length} events imported`);
+      setGuide(null);
     } catch (e) {
       setMsg(`⚠️ ${(e as Error).message}`);
     }
     setBusy(false);
   };
 
+  const g = guide ? PROVIDER_GUIDES[guide] : null;
   return (
     <Card title="Real calendar feed" action={importedCount > 0 ? <span className="badge badge-green">{importedCount} SYNCED</span> : undefined}>
       <p className="small muted" style={{ marginTop: 0 }}>
-        Paste your calendar's <strong>secret iCal address</strong> and your real meetings flow into the planner.
-        Google: calendar Settings → "Secret address in iCal format" · Apple: iCloud calendar → share → Public Calendar
-        · Outlook: Settings → Shared calendars → ICS link. (SETUP.md Part 3 has details.)
+        Link your real calendar and the planner schedules workouts, meals and recovery around your actual meetings.
+        Where is your calendar?
       </p>
+      <div className="chip-row mb-8">
+        {Object.entries(PROVIDER_GUIDES).map(([id, p]) => (
+          <Chip key={id} active={guide === id} onClick={() => setGuide(guide === id ? null : id)}>{p.label}</Chip>
+        ))}
+      </div>
+      {g && (
+        <div style={{ background: 'var(--surface-2)', borderRadius: 10, padding: '10px 14px' }} className="mb-8">
+          <ol className="small" style={{ margin: 0, paddingLeft: 18, display: 'flex', flexDirection: 'column', gap: 4 }}>
+            {g.steps.map((s, i) => <li key={i}>{s}</li>)}
+          </ol>
+          <p className="small muted" style={{ marginBottom: 0 }}>The link looks like: <code style={{ wordBreak: 'break-all' }}>{g.looksLike}</code></p>
+        </div>
+      )}
       <div className="form-row">
-        <input placeholder="https://calendar.google.com/calendar/ical/…/basic.ics" value={url} onChange={e => setUrl(e.target.value)} />
+        <input placeholder="Paste your calendar link here (webcal:// or https://…)" value={url} onChange={e => { setUrl(e.target.value); setMsg(null); }} />
         <button className="btn" disabled={busy || !url} onClick={() => sync(url)} style={{ maxWidth: 130 }}>
           {busy ? 'Syncing…' : 'Sync now'}
         </button>
@@ -50,6 +113,7 @@ function CalendarFeedCard() {
         </div>
       )}
       {msg && <p className="small mt-8">{msg}</p>}
+      <p className="small muted mt-8">🔒 Your link is stored in your own data only. Treat it like a password — anyone holding it can read that calendar.</p>
     </Card>
   );
 }

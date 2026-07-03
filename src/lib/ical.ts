@@ -132,8 +132,15 @@ export async function fetchIcs(url: string): Promise<string> {
     const r = await fetch(`${cfg.url}/functions/v1/calendar-proxy?url=${encodeURIComponent(normalized)}`, {
       headers: { Authorization: `Bearer ${cfg.anonKey}`, apikey: cfg.anonKey },
     });
-    if (!r.ok) throw new Error(`Calendar proxy returned ${r.status} — is the calendar-proxy function deployed? (SETUP.md Part 3)`);
-    return await r.text();
+    if (r.status === 401) {
+      throw new Error('The calendar-proxy function rejected the request. In the Supabase dashboard: Edge Functions → calendar-proxy → Details → turn OFF "Enforce JWT verification", then retry.');
+    }
+    if (r.status === 404) {
+      throw new Error('The calendar-proxy function isn\'t deployed yet — see SETUP.md Part 3.');
+    }
+    const body = await r.text();
+    if (!r.ok) throw new Error(`Calendar proxy returned ${r.status}${body ? ` — ${body.slice(0, 80)}` : ''}`);
+    return body;
   }
 }
 

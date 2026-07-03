@@ -116,6 +116,11 @@ function runs in your Supabase project (code already written:
    sample code with the contents of `supabase/functions/calendar-proxy/index.ts`,
    click **Deploy**.
 
+   Then open the function's **Details** page and turn **OFF "Enforce JWT
+   verification"** — dashboard-deployed functions have it on by default and it
+   rejects the app's requests (the function itself is a harmless read-only relay,
+   and it refuses to return anything that isn't a calendar).
+
 2. **Get your calendar's secret address:**
    - **Google Calendar** (calendar.google.com on desktop): ⚙️ Settings → click your
      calendar in the left list → scroll to **Integrate calendar** → copy
