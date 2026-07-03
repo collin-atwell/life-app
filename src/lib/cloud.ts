@@ -13,15 +13,26 @@ export const LOCAL_UPDATED_KEY = 'health-hub-updated-at-v1';
 
 export interface CloudConfig { url: string; anonKey: string }
 
+// Built-in backend: the app's own Supabase project, so users just sign up and
+// log in. The anon key is safe to publish — row-level security (see
+// supabase/schema.sql) means each account can only ever read/write its own row.
+export const DEFAULT_CLOUD: CloudConfig = {
+  url: 'https://sqwwdzxpiwjaxsyzajjp.supabase.co',
+  anonKey: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InNxd3dkenhwaXdqYXhzeXphampwIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODMwOTkyMzcsImV4cCI6MjA5ODY3NTIzN30.QmQQnuVq4hQ_GKXtAHMgoVpr0RAhyaC17ASvbcT8zWU',
+};
+
+/** True when no custom backend override is stored (i.e. using the built-in one). */
+export const isDefaultCloud = () => !localStorage.getItem(CONFIG_KEY);
+
 let client: SupabaseClient | null = null;
 let clientKey = '';
 
 export function getCloudConfig(): CloudConfig | null {
   try {
     const raw = localStorage.getItem(CONFIG_KEY);
-    return raw ? (JSON.parse(raw) as CloudConfig) : null;
+    return raw ? (JSON.parse(raw) as CloudConfig) : DEFAULT_CLOUD;
   } catch {
-    return null;
+    return DEFAULT_CLOUD;
   }
 }
 

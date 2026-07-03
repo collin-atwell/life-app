@@ -3,16 +3,16 @@ import { useApp } from '../state/AppContext';
 import { Card, Chip, Field } from '../components/ui';
 import { notifPermission, requestNotifPermission, sendNotification } from '../lib/notifications';
 import {
-  cloudSession, cloudSignIn, cloudSignOut, cloudSignUp, getCloudConfig,
+  cloudSession, cloudSignIn, cloudSignOut, cloudSignUp, getCloudConfig, isDefaultCloud,
   lastSyncAt, pullState, pushState, setCloudConfig,
 } from '../lib/cloud';
 import type { ActivityLevel } from '../types';
 
 function CloudSyncCard() {
   const { data, update, celebrate } = useApp();
-  const [configured, setConfigured] = useState(!!getCloudConfig());
-  const [url, setUrl] = useState(getCloudConfig()?.url ?? '');
-  const [anonKey, setAnonKey] = useState(getCloudConfig()?.anonKey ?? '');
+  const [customCloud, setCustomCloud] = useState(!isDefaultCloud());
+  const [url, setUrl] = useState(isDefaultCloud() ? '' : getCloudConfig()?.url ?? '');
+  const [anonKey, setAnonKey] = useState(isDefaultCloud() ? '' : getCloudConfig()?.anonKey ?? '');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [userEmail, setUserEmail] = useState<string | null>(null);
@@ -20,8 +20,8 @@ function CloudSyncCard() {
   const [msg, setMsg] = useState<string | null>(null);
 
   useEffect(() => {
-    if (configured) cloudSession().then(s => setUserEmail(s?.user.email ?? null));
-  }, [configured]);
+    cloudSession().then(s => setUserEmail(s?.user.email ?? null));
+  }, [customCloud]);
 
   const run = async (fn: () => Promise<string | null>, okMsg: string) => {
     setBusy(true); setMsg(null);
@@ -33,34 +33,16 @@ function CloudSyncCard() {
     return err;
   };
 
-  if (!configured) {
-    return (
-      <Card title="Cloud sync & backup">
-        <p className="small muted">
-          Optional: sync your data across devices with a free Supabase backend.
-          Follow <strong>SETUP.md</strong> in the project folder (≈10 min, $0), then paste your project's URL and anon key here.
-        </p>
-        <div className="form-row mt-8">
-          <Field label="Supabase project URL"><input value={url} placeholder="https://xxxx.supabase.co" onChange={e => setUrl(e.target.value)} /></Field>
-          <Field label="Anon (public) key"><input value={anonKey} placeholder="eyJhbGciOi…" onChange={e => setAnonKey(e.target.value)} /></Field>
-        </div>
-        <button className="btn mt-8" onClick={() => {
-          if (!url.startsWith('https://') || !anonKey) { setMsg('⚠️ Enter a valid URL and key'); return; }
-          setCloudConfig({ url: url.trim(), anonKey: anonKey.trim() });
-          setConfigured(true);
-          celebrate('☁️ Cloud configured — now sign in below');
-        }}>Connect</button>
-        {msg && <p className="small mt-8">{msg}</p>}
-      </Card>
-    );
-  }
-
   if (!userEmail) {
     return (
-      <Card title="Cloud sync & backup" action={<span className="badge badge-yellow">SIGNED OUT</span>}>
+      <Card title="Account & sync" action={<span className="badge badge-yellow">SIGNED OUT</span>}>
+        <p className="small muted" style={{ marginTop: 0 }}>
+          Create a free account to back up your data and sync it across your phone and computer.
+          Works instantly — the backend is built in.
+        </p>
         <div className="form-row">
-          <Field label="Email"><input type="email" value={email} onChange={e => setEmail(e.target.value)} /></Field>
-          <Field label="Password"><input type="password" value={password} onChange={e => setPassword(e.target.value)} /></Field>
+          <Field label="Email"><input type="email" autoComplete="email" value={email} onChange={e => setEmail(e.target.value)} /></Field>
+          <Field label="Password"><input type="password" autoComplete="current-password" value={password} onChange={e => setPassword(e.target.value)} /></Field>
         </div>
         <div className="flex mt-8">
           <button className="btn" disabled={busy} onClick={async () => {
@@ -77,16 +59,42 @@ function CloudSyncCard() {
               }
             }
           }}>Sign in</button>
-          <button className="btn btn-secondary" disabled={busy} onClick={() => run(() => cloudSignUp(email, password), '☁️ Account created')}>Create account</button>
-          <button className="btn btn-sm btn-secondary" onClick={() => { setCloudConfig(null); setConfigured(false); }}>Disconnect</button>
+          <button className="btn btn-secondary" disabled={busy} onClick={async () => {
+            const err = await run(() => cloudSignUp(email, password), '☁️ Account created — you\'re signed in');
+            if (!err) {
+              setUserEmail(email);
+              await pushState(data);
+            }
+          }}>Create account</button>
         </div>
         {msg && <p className="small mt-8">{msg}</p>}
+        <details className="mt-8">
+          <summary className="small muted" style={{ cursor: 'pointer' }}>Advanced: use your own Supabase backend</summary>
+          <div className="form-row mt-8">
+            <Field label="Supabase project URL"><input value={url} placeholder="https://xxxx.supabase.co" onChange={e => setUrl(e.target.value)} /></Field>
+            <Field label="Anon (public) key"><input value={anonKey} placeholder="eyJhbGciOi…" onChange={e => setAnonKey(e.target.value)} /></Field>
+          </div>
+          <div className="flex mt-8">
+            <button className="btn btn-sm btn-secondary" onClick={() => {
+              if (!url.startsWith('https://') || !anonKey) { setMsg('⚠️ Enter a valid URL and key'); return; }
+              setCloudConfig({ url: url.trim(), anonKey: anonKey.trim() });
+              setCustomCloud(true);
+              celebrate('☁️ Custom backend set — sign in above');
+            }}>Use custom backend</button>
+            {customCloud && (
+              <button className="btn btn-sm btn-secondary" onClick={() => {
+                setCloudConfig(null); setCustomCloud(false); setUrl(''); setAnonKey('');
+                celebrate('☁️ Back on the built-in backend');
+              }}>Reset to built-in</button>
+            )}
+          </div>
+        </details>
       </Card>
     );
   }
 
   return (
-    <Card title="Cloud sync & backup" action={<span className="badge badge-green">SYNCED</span>}>
+    <Card title="Account & sync" action={<span className="badge badge-green">SYNCED</span>}>
       <p className="small">
         Signed in as <strong>{userEmail}</strong>
         {lastSyncAt() && <> · last sync {new Date(lastSyncAt()!).toLocaleTimeString()}</>}

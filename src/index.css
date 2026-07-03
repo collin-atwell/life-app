@@ -57,6 +57,12 @@ a { color: var(--accent); }
 
 /* ---------- Layout ---------- */
 .app-shell { max-width: 1100px; margin: 0 auto; padding: 0 16px 90px; }
+body { overflow-x: clip; }
+@media (max-width: 560px) {
+  .app-shell { padding: 0 10px 96px; }
+  h1 { font-size: 1.15rem; }
+  .card { padding: 13px; }
+}
 
 .topbar {
   display: flex; align-items: center; justify-content: space-between;
@@ -91,11 +97,19 @@ a { color: var(--accent); }
 @keyframes fadeIn { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
 
 .grid { display: grid; gap: 16px; }
+.grid > * { min-width: 0; } /* let cards shrink below content width (heatmaps/tables scroll instead) */
 .grid-2 { grid-template-columns: repeat(2, 1fr); }
 .grid-3 { grid-template-columns: repeat(3, 1fr); }
 .grid-4 { grid-template-columns: repeat(4, 1fr); }
 @media (max-width: 900px) { .grid-3 { grid-template-columns: repeat(2, 1fr); } .grid-4 { grid-template-columns: repeat(2, 1fr); } }
-@media (max-width: 560px) { .grid-2 { grid-template-columns: 1fr; } }
+@media (max-width: 560px) {
+  .grid { gap: 12px; }
+  /* full-width cards on phones… */
+  .grid-2, .grid-3 { grid-template-columns: 1fr; }
+  /* …but keep small stat tiles side-by-side */
+  .grid-3:has(> .stat) { grid-template-columns: repeat(3, 1fr); }
+  .grid-4 { grid-template-columns: repeat(2, 1fr); }
+}
 
 /* ---------- Cards ---------- */
 .card {
@@ -194,6 +208,10 @@ textarea { resize: vertical; min-height: 90px; }
 .list-item-sub { font-size: 0.8rem; color: var(--text-dim); }
 
 table.data-table { width: 100%; border-collapse: collapse; font-size: 0.87rem; }
+@media (max-width: 560px) {
+  /* wide tables scroll sideways instead of stretching the page */
+  table.data-table { display: block; overflow-x: auto; }
+}
 .data-table th { text-align: left; color: var(--text-dim); font-size: 0.75rem; text-transform: uppercase; padding: 6px 8px; border-bottom: 1px solid var(--border); }
 .data-table td { padding: 7px 8px; border-bottom: 1px solid var(--border); }
 

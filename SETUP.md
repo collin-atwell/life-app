@@ -52,6 +52,14 @@ Every future `git push` to `main` redeploys automatically.
 
 ## Part 2: The backend (Supabase free tier)
 
+> ✅ **Done — and baked in.** The app now ships with its backend built in
+> (project `sqwwdzxpiwjaxsyzajjp`, configured in `src/lib/cloud.ts`). Anyone using
+> the app just goes to **Settings → Account & sync → Create account** — no keys,
+> no setup. Row-level security keeps every account's data private, so friends can
+> all use the same app. The steps below are only needed if you ever want to stand
+> up a *separate* backend (there's an "Advanced" section in Settings to point the
+> app at one).
+
 Supabase gives you a hosted Postgres database + user accounts. The free tier
 (500 MB, 50k monthly users) is far more than this app will ever need.
 
