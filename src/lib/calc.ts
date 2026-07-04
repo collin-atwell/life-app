@@ -358,6 +358,32 @@ export function deloadSuggested(data: AppData): boolean {
   return avgMood <= 4.5 && weekStrain > 150;
 }
 
+// ---------- Program day tracking ----------
+
+export interface UpNext { program: import('../types').Program; dayIdx: number }
+
+/**
+ * Which program day is up next? Defaults to the day after the most recently
+ * logged workout from the active program (wrapping), starting at day 0.
+ */
+export function nextProgramDay(data: AppData): UpNext | null {
+  const program = data.programs.find(p => p.id === data.activeProgramId);
+  if (!program || program.days.length === 0) return null;
+  const last = [...data.workouts]
+    .filter((w): w is StrengthWorkout => w.kind === 'strength' && !w.inProgress && w.programId === program.id)
+    .sort((a, b) => a.date.localeCompare(b.date) || a.id.localeCompare(b.id))
+    .at(-1);
+  if (!last) return { program, dayIdx: 0 };
+  const lastIdx = program.days.findIndex(d => d.name === last.name);
+  return { program, dayIdx: lastIdx >= 0 ? (lastIdx + 1) % program.days.length : 0 };
+}
+
+/** Estimated session length for a program day: warm-up + per-set work & rest. */
+export function estimateDayMinutes(day: import('../types').ProgramDay): number {
+  const sets = day.exercises.reduce((t, e) => t + e.sets, 0);
+  return Math.round((10 + sets * 2.6) / 5) * 5; // 10 min warm-up, ~2.6 min per set
+}
+
 // ---------- Weekly report ----------
 
 /** Plain-text summary of the trailing 7 days, for sharing/copying. */

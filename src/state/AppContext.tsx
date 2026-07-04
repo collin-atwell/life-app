@@ -1,5 +1,6 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
+import confetti from 'canvas-confetti';
 import type { AppData } from '../types';
 import { buildDemoData, buildEmptyData } from '../data/demo';
 import { autoPush, LOCAL_UPDATED_KEY, pullIfNewer } from '../lib/cloud';
@@ -15,8 +16,11 @@ function load(): AppData | null {
     const raw = localStorage.getItem(STORAGE_KEY);
     if (!raw) return null;
     const data = JSON.parse(raw) as AppData;
-    // migrate data saved before notification prefs existed
+    // migrations for data saved by older versions
     data.notifPrefs ??= { enabled: false, hydration: true, workout: true, bedtime: true };
+    data.icalFeeds ??= data.icalUrl ? [{ id: 'default', name: 'My calendar', url: data.icalUrl }] : [];
+    delete data.icalUrl;
+    data.profile.timezone ??= Intl.DateTimeFormat().resolvedOptions().timeZone;
     return data;
   } catch {
     return null;
@@ -104,6 +108,12 @@ export function AppProvider({ children }: { children: ReactNode }) {
     setCelebration(msg);
     clearTimeout(celebTimer.current);
     celebTimer.current = setTimeout(() => setCelebration(null), 3500);
+    // Big-moment messages get confetti 🎉
+    if (/🎉|🎯|PR|streak|goal/i.test(msg) && !msg.startsWith('⚠️')) {
+      confetti({ particleCount: 120, spread: 75, origin: { y: 0.25 }, disableForReducedMotion: true });
+      setTimeout(() => confetti({ particleCount: 60, angle: 60, spread: 55, origin: { x: 0, y: 0.4 }, disableForReducedMotion: true }), 180);
+      setTimeout(() => confetti({ particleCount: 60, angle: 120, spread: 55, origin: { x: 1, y: 0.4 }, disableForReducedMotion: true }), 320);
+    }
   }, []);
 
   const exportJson = useCallback(() => {

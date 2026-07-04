@@ -1,122 +1,11 @@
 import { useMemo, useState } from 'react';
 import { addDays, format, parseISO } from 'date-fns';
 import { useApp } from '../state/AppContext';
-import { Card, Chip, Field, Modal } from '../components/ui';
+import { Card, Field, Modal } from '../components/ui';
 import { fmtDate, today } from '../lib/calc';
 import { generateDayPlan } from '../lib/scheduler';
-import { mergeCalendarEvents, syncCalendarFeed } from '../lib/ical';
+import { syncAllFeeds } from '../lib/ical';
 import type { CalendarEvent, EventType } from '../types';
-
-const PROVIDER_GUIDES: Record<string, { label: string; steps: string[]; looksLike: string }> = {
-  apple: {
-    label: ' Apple / iCloud',
-    steps: [
-      'On your iPhone, open the Calendar app',
-      'Tap "Calendars" at the bottom of the screen',
-      'Find the calendar you want under the ICLOUD heading and tap the ⓘ next to it (only iCloud calendars can be linked — Gmail/work calendars listed in the Apple app won\'t offer this)',
-      'Scroll down and turn ON "Public Calendar"',
-      'Tap "Share Link…" → "Copy"',
-      'Paste it below — webcal:// links work as-is',
-    ],
-    looksLike: 'webcal://p12-caldav.icloud.com/published/2/…',
-  },
-  google: {
-    label: 'Google',
-    steps: [
-      'On a computer, open calendar.google.com',
-      'Click the ⚙️ gear (top right) → "Settings"',
-      'In the left sidebar under "Settings for my calendars", click your calendar\'s name',
-      'Scroll down to the "Integrate calendar" section',
-      'Copy the "Secret address in iCal format" (click the copy icon next to it)',
-    ],
-    looksLike: 'https://calendar.google.com/calendar/ical/…/private-…/basic.ics',
-  },
-  outlook: {
-    label: 'Outlook',
-    steps: [
-      'On a computer, open outlook.com (or outlook.office.com for work)',
-      'Click the ⚙️ gear → "Calendar" → "Shared calendars"',
-      'Under "Publish a calendar": choose your calendar + "Can view all details", click "Publish"',
-      'Copy the ICS link (not the HTML one)',
-    ],
-    looksLike: 'https://outlook.live.com/owa/calendar/…/calendar.ics',
-  },
-};
-
-/** Catch the most common wrong-link pastes before hitting the network. */
-function linkProblem(u: string): string | null {
-  const url = u.trim();
-  if (/icloud\.com\/calendar/i.test(url)) return 'That\'s the iCloud calendar *website* address. You need the Public Calendar share link — it starts with webcal://…caldav.icloud.com/published/. Follow the Apple steps above.';
-  if (/calendar\.google\.com/i.test(url) && !/\.ics(\?|$)/i.test(url)) return 'That looks like the Google Calendar *webpage*. You need the "Secret address in iCal format" from the calendar\'s settings — it ends in .ics. Follow the Google steps above.';
-  if (/supabase\.co/i.test(url)) return 'That\'s your Supabase address, not a calendar link — paste your calendar\'s iCal feed URL instead.';
-  if (!/^(webcal|https?):\/\//i.test(url)) return 'The link should start with webcal:// or https:// — copy the whole address.';
-  return null;
-}
-
-function CalendarFeedCard() {
-  const { data, update, celebrate } = useApp();
-  const [url, setUrl] = useState(data.icalUrl ?? '');
-  const [busy, setBusy] = useState(false);
-  const [msg, setMsg] = useState<string | null>(null);
-  const [guide, setGuide] = useState<string | null>(data.icalUrl ? null : 'apple');
-  const importedCount = data.events.filter(e => e.id.startsWith('ical-')).length;
-
-  const sync = async (feedUrl: string) => {
-    const problem = linkProblem(feedUrl);
-    if (problem) { setMsg(`⚠️ ${problem}`); return; }
-    setBusy(true); setMsg(null);
-    try {
-      const imported = await syncCalendarFeed(feedUrl);
-      update(d => ({ ...mergeCalendarEvents(d, imported), icalUrl: feedUrl }));
-      celebrate(`📅 Calendar synced — ${imported.length} events imported`);
-      setGuide(null);
-    } catch (e) {
-      setMsg(`⚠️ ${(e as Error).message}`);
-    }
-    setBusy(false);
-  };
-
-  const g = guide ? PROVIDER_GUIDES[guide] : null;
-  return (
-    <Card title="Real calendar feed" action={importedCount > 0 ? <span className="badge badge-green">{importedCount} SYNCED</span> : undefined}>
-      <p className="small muted" style={{ marginTop: 0 }}>
-        Link your real calendar and the planner schedules workouts, meals and recovery around your actual meetings.
-        Where is your calendar?
-      </p>
-      <div className="chip-row mb-8">
-        {Object.entries(PROVIDER_GUIDES).map(([id, p]) => (
-          <Chip key={id} active={guide === id} onClick={() => setGuide(guide === id ? null : id)}>{p.label}</Chip>
-        ))}
-      </div>
-      {g && (
-        <div style={{ background: 'var(--surface-2)', borderRadius: 10, padding: '10px 14px' }} className="mb-8">
-          <ol className="small" style={{ margin: 0, paddingLeft: 18, display: 'flex', flexDirection: 'column', gap: 4 }}>
-            {g.steps.map((s, i) => <li key={i}>{s}</li>)}
-          </ol>
-          <p className="small muted" style={{ marginBottom: 0 }}>The link looks like: <code style={{ wordBreak: 'break-all' }}>{g.looksLike}</code></p>
-        </div>
-      )}
-      <div className="form-row">
-        <input placeholder="Paste your calendar link here (webcal:// or https://…)" value={url} onChange={e => { setUrl(e.target.value); setMsg(null); }} />
-        <button className="btn" disabled={busy || !url} onClick={() => sync(url)} style={{ maxWidth: 130 }}>
-          {busy ? 'Syncing…' : 'Sync now'}
-        </button>
-      </div>
-      {data.icalUrl && (
-        <div className="flex mt-8">
-          <button className="btn btn-sm btn-secondary" disabled={busy} onClick={() => sync(data.icalUrl!)}>Refresh</button>
-          <button className="btn btn-sm btn-secondary" onClick={() => {
-            update(d => ({ ...d, icalUrl: undefined, events: d.events.filter(e => !e.id.startsWith('ical-')) }));
-            setUrl('');
-            celebrate('Calendar feed removed');
-          }}>Remove feed</button>
-        </div>
-      )}
-      {msg && <p className="small mt-8">{msg}</p>}
-      <p className="small muted mt-8">🔒 Your link is stored in your own data only. Treat it like a password — anyone holding it can read that calendar.</p>
-    </Card>
-  );
-}
 
 const uid = () => `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
 const toMin = (t: string) => { const [h, m] = t.split(':').map(Number); return h * 60 + m; };
@@ -157,20 +46,32 @@ function Timeline({ events, onAccept, onRemove }: {
   );
 }
 
-export default function Schedule() {
+export default function Schedule({ go }: { go: (tab: string) => void }) {
   const { data, update, celebrate } = useApp();
   const [date, setDate] = useState(today());
   const [adding, setAdding] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
   const [form, setForm] = useState({ title: '', start: '09:00', end: '10:00', type: 'meeting' as EventType });
 
   const plan = useMemo(() => generateDayPlan(data, date), [data, date]);
   const dayEvents = data.events.filter(e => e.date === date);
   const sleepSugg = plan.suggestions.find(s => s.type === 'sleep');
   const merged = [...dayEvents, ...plan.suggestions.filter(s => s.type !== 'sleep' && !dayEvents.some(e => e.type === s.type && e.title === s.title))];
+  const feeds = data.icalFeeds ?? [];
 
   const accept = (e: CalendarEvent) => {
     update(d => ({ ...d, events: [...d.events, { ...e, id: uid(), suggested: false }] }));
     celebrate(`📅 Added "${e.title}" to your calendar`);
+  };
+
+  const refreshFeeds = async () => {
+    setRefreshing(true);
+    const { data: next, results } = await syncAllFeeds(data);
+    update(() => next);
+    const ok = results.filter(r => !r.error);
+    const failed = results.filter(r => r.error);
+    celebrate(`📅 ${ok.reduce((t, r) => t + (r.count ?? 0), 0)} events from ${ok.length} calendar${ok.length === 1 ? '' : 's'}${failed.length ? ` (${failed.length} failed)` : ''}`);
+    setRefreshing(false);
   };
 
   return (
@@ -185,13 +86,20 @@ export default function Schedule() {
         </div>
       </div>
 
-      <CalendarFeedCard />
-
       <Card>
-        <p className="small muted" style={{ marginTop: 0 }}>
-          Dashed blocks are AI suggestions built from your recovery score, training history and free gaps; click <strong>✓ accept</strong> to commit one.
-        </p>
-        {plan.busyScore >= 5 && <p className="small">⚠️ <strong>{Math.round(plan.busyScore)}h of meetings today</strong> — suggestions favor a shorter workout and simpler meals.</p>}
+        <div className="flex-between">
+          <p className="small muted" style={{ margin: 0 }}>
+            {feeds.length > 0
+              ? <>🔗 {feeds.length} linked calendar{feeds.length === 1 ? '' : 's'}: {feeds.map(f => f.name).join(', ')}.</>
+              : <>🔗 No calendars linked yet — connect iCloud/Google/Outlook/work feeds in Settings.</>}
+            {' '}Dashed blocks are AI suggestions from your recovery, program and free gaps — <strong>✓ accept</strong> to commit one.
+          </p>
+          <div className="flex">
+            {feeds.length > 0 && <button className="btn btn-sm btn-secondary" disabled={refreshing} onClick={refreshFeeds}>{refreshing ? 'Syncing…' : '↻ Refresh'}</button>}
+            <button className="btn btn-sm btn-secondary" onClick={() => go('settings')}>⚙️ Manage calendars</button>
+          </div>
+        </div>
+        {plan.busyScore >= 5 && <p className="small mt-8">⚠️ <strong>{Math.round(plan.busyScore)}h of meetings today</strong> — suggestions favor shorter training and simpler meals.</p>}
       </Card>
 
       <div className="grid grid-2">

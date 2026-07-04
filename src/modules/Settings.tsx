@@ -6,7 +6,102 @@ import {
   cloudSession, cloudSignIn, cloudSignOut, cloudSignUp, getCloudConfig, isDefaultCloud,
   lastSyncAt, pullState, pushState, setCloudConfig,
 } from '../lib/cloud';
+import { linkProblem, PROVIDER_GUIDES } from '../lib/calendarGuides';
+import { mergeFeedEvents, removeFeedEvents, syncCalendarFeed } from '../lib/ical';
+import { currentPushSubscription, disablePush, enablePush, pushSupported } from '../lib/push';
 import type { ActivityLevel } from '../types';
+
+const uid = () => `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+
+function CalendarFeedsCard() {
+  const { data, update, celebrate } = useApp();
+  const [name, setName] = useState('');
+  const [url, setUrl] = useState('');
+  const [guide, setGuide] = useState<string | null>(null);
+  const [busy, setBusy] = useState<string | null>(null);   // feed id being synced
+  const [msg, setMsg] = useState<string | null>(null);
+  const feeds = data.icalFeeds ?? [];
+  const countFor = (feedId: string) => data.events.filter(e => e.id.startsWith(`ical-${feedId}-`)).length;
+
+  const addFeed = async () => {
+    const problem = linkProblem(url);
+    if (problem) { setMsg(`⚠️ ${problem}`); return; }
+    const feed = { id: uid(), name: name.trim() || `Calendar ${feeds.length + 1}`, url: url.trim() };
+    setBusy(feed.id); setMsg(null);
+    try {
+      const imported = await syncCalendarFeed(feed.url, feed.id);
+      update(d => ({ ...mergeFeedEvents(d, feed.id, imported), icalFeeds: [...(d.icalFeeds ?? []), feed] }));
+      celebrate(`📅 "${feed.name}" linked — ${imported.length} events imported`);
+      setName(''); setUrl(''); setGuide(null);
+    } catch (e) {
+      setMsg(`⚠️ ${(e as Error).message}`);
+    }
+    setBusy(null);
+  };
+
+  const resync = async (feedId: string) => {
+    const feed = feeds.find(f => f.id === feedId);
+    if (!feed) return;
+    setBusy(feedId); setMsg(null);
+    try {
+      const imported = await syncCalendarFeed(feed.url, feed.id);
+      update(d => mergeFeedEvents(d, feed.id, imported));
+      celebrate(`📅 "${feed.name}" refreshed — ${imported.length} events`);
+    } catch (e) {
+      setMsg(`⚠️ ${feed.name}: ${(e as Error).message}`);
+    }
+    setBusy(null);
+  };
+
+  const g = guide ? PROVIDER_GUIDES[guide] : null;
+  return (
+    <Card title="Linked calendars">
+      <p className="small muted" style={{ marginTop: 0 }}>
+        Link home and work calendars — the planner builds your day around all of them.
+        Where is the calendar?
+      </p>
+      <div className="chip-row mb-8">
+        {Object.entries(PROVIDER_GUIDES).map(([id, p]) => (
+          <Chip key={id} active={guide === id} onClick={() => setGuide(guide === id ? null : id)}>{p.label}</Chip>
+        ))}
+      </div>
+      {g && (
+        <div style={{ background: 'var(--surface-2)', borderRadius: 10, padding: '10px 14px' }} className="mb-8">
+          <ol className="small" style={{ margin: 0, paddingLeft: 18, display: 'flex', flexDirection: 'column', gap: 4 }}>
+            {g.steps.map((s, i) => <li key={i}>{s}</li>)}
+          </ol>
+          <p className="small muted" style={{ marginBottom: 0 }}>The link looks like: <code style={{ wordBreak: 'break-all' }}>{g.looksLike}</code></p>
+        </div>
+      )}
+      {feeds.length > 0 && (
+        <div className="list mb-8">
+          {feeds.map(f => (
+            <div key={f.id} className="list-item">
+              <div className="list-item-main">
+                <div className="list-item-title">{f.name}</div>
+                <div className="list-item-sub">{countFor(f.id)} events imported</div>
+              </div>
+              <button className="btn btn-sm btn-secondary" disabled={busy === f.id} onClick={() => resync(f.id)}>
+                {busy === f.id ? '…' : '↻'}
+              </button>
+              <button className="btn-icon" aria-label={`Remove ${f.name}`} onClick={() => {
+                update(d => ({ ...removeFeedEvents(d, f.id), icalFeeds: (d.icalFeeds ?? []).filter(x => x.id !== f.id) }));
+                celebrate(`Removed "${f.name}"`);
+              }}>🗑</button>
+            </div>
+          ))}
+        </div>
+      )}
+      <div className="form-row">
+        <Field label="Name"><input placeholder="Home / Work / …" value={name} onChange={e => setName(e.target.value)} /></Field>
+        <Field label="Calendar link"><input placeholder="webcal:// or https://…" value={url} onChange={e => { setUrl(e.target.value); setMsg(null); }} /></Field>
+      </div>
+      <button className="btn mt-8" disabled={!url || busy !== null} onClick={addFeed}>{busy && !feeds.some(f => f.id === busy) ? 'Linking…' : '+ Link calendar'}</button>
+      {msg && <p className="small mt-8">{msg}</p>}
+      <p className="small muted mt-8">🔒 Feed links are stored in your own data and sync to your devices. Treat them like passwords.</p>
+    </Card>
+  );
+}
 
 function CloudSyncCard() {
   const { data, update, celebrate } = useApp();
@@ -132,6 +227,9 @@ export default function Settings() {
   const setPrefs = (patch: Partial<typeof prefs>) => update(d => ({ ...d, notifPrefs: { ...d.notifPrefs, ...patch } }));
   const perm = notifPermission();
   void permTick;
+  const [pushOn, setPushOn] = useState(false);
+  const [pushBusy, setPushBusy] = useState(false);
+  useEffect(() => { currentPushSubscription().then(s => setPushOn(!!s)); }, []);
 
   return (
     <div className="page">
@@ -199,15 +297,44 @@ export default function Settings() {
             <p className="small muted mt-8">
               Hydration nudges fire every 2h (10am–8pm) when you're behind pace; workout heads-ups 45 min before
               scheduled workout events; bedtime wind-down 30 min before your suggested bedtime.
-              Reminders fire while the app is open (background tabs included). Push with the app fully closed
-              requires the future backend + service worker.
               {perm === 'denied' && <strong> Browser permission is currently denied — reminders fall back to in-app toasts.</strong>}
             </p>
+            {prefs.enabled && (
+              <div className="mt-8" style={{ borderTop: '1px solid var(--border)', paddingTop: 10 }}>
+                <div className="flex-between">
+                  <div>
+                    <strong className="small">📲 Background push (app closed)</strong>
+                    <p className="small muted" style={{ margin: '2px 0 0' }}>
+                      {pushOn
+                        ? 'Active on this device — reminders arrive even when the app is closed.'
+                        : pushSupported()
+                          ? 'Get reminders even when the app is closed. Requires being signed in.'
+                          : 'On iPhone: add the app to your Home Screen first (Safari only allows push for installed apps).'}
+                    </p>
+                  </div>
+                  <button className="btn btn-sm" disabled={pushBusy || (!pushOn && !pushSupported())} onClick={async () => {
+                    setPushBusy(true);
+                    if (pushOn) {
+                      await disablePush();
+                      setPushOn(false);
+                      celebrate('Background push off for this device');
+                    } else {
+                      const err = await enablePush();
+                      if (err) celebrate(`⚠️ ${err}`);
+                      else { setPushOn(true); celebrate('📲 Background push active!'); }
+                    }
+                    setPushBusy(false);
+                  }}>{pushBusy ? '…' : pushOn ? 'Disable' : 'Enable'}</button>
+                </div>
+              </div>
+            )}
           </>
         )}
       </Card>
 
       <CloudSyncCard />
+
+      <CalendarFeedsCard />
 
       <Card title="Data">
         <div className="flex">

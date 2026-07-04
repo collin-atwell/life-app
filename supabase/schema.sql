@@ -70,3 +70,37 @@ drop policy if exists "authors remove their own foods" on public.community_foods
 create policy "authors remove their own foods"
   on public.community_foods for delete
   using (auth.uid() = created_by);
+
+-- ---------------------------------------------------------------------------
+-- Background push subscriptions (one row per device). The send-reminders edge
+-- function reads these with the service role; users manage only their own.
+create table if not exists public.push_subscriptions (
+  endpoint     text primary key,
+  user_id      uuid not null references auth.users (id) on delete cascade,
+  subscription jsonb not null,
+  sent         jsonb not null default '{}'::jsonb,
+  created_at   timestamptz not null default now()
+);
+
+alter table public.push_subscriptions enable row level security;
+
+drop policy if exists "own subscriptions select" on public.push_subscriptions;
+create policy "own subscriptions select"
+  on public.push_subscriptions for select
+  using (auth.uid() = user_id);
+
+drop policy if exists "own subscriptions insert" on public.push_subscriptions;
+create policy "own subscriptions insert"
+  on public.push_subscriptions for insert
+  with check (auth.uid() = user_id);
+
+drop policy if exists "own subscriptions update" on public.push_subscriptions;
+create policy "own subscriptions update"
+  on public.push_subscriptions for update
+  using (auth.uid() = user_id)
+  with check (auth.uid() = user_id);
+
+drop policy if exists "own subscriptions delete" on public.push_subscriptions;
+create policy "own subscriptions delete"
+  on public.push_subscriptions for delete
+  using (auth.uid() = user_id);

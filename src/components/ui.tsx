@@ -1,4 +1,26 @@
+import { useEffect, useRef, useState } from 'react';
 import type { CSSProperties, ReactNode } from 'react';
+
+/** Eased count-up: numbers roll to their new value instead of jumping. */
+export function useCountUp(target: number, ms = 700): number {
+  const [v, setV] = useState(target);
+  const fromRef = useRef(0);
+  useEffect(() => {
+    const from = fromRef.current;
+    if (from === target) { setV(target); return; }
+    let raf: number;
+    const start = performance.now();
+    const tick = (t: number) => {
+      const p = Math.min(1, (t - start) / ms);
+      setV(from + (target - from) * (1 - Math.pow(1 - p, 3)));
+      if (p < 1) raf = requestAnimationFrame(tick);
+      else fromRef.current = target;
+    };
+    raf = requestAnimationFrame(tick);
+    return () => { cancelAnimationFrame(raf); fromRef.current = target; };
+  }, [target, ms]);
+  return v;
+}
 
 export function Card({ title, action, children, className = '' }: {
   title?: ReactNode; action?: ReactNode; children: ReactNode; className?: string;
@@ -21,7 +43,7 @@ export function Stat({ label, value, sub, zone }: {
 }) {
   return (
     <div className={`stat ${zone ? `zone-${zone}` : ''}`}>
-      <div className="stat-value">{value}</div>
+      <div className="stat-value" key={String(value)}>{value}</div>
       <div className="stat-label">{label}</div>
       {sub && <div className="stat-sub">{sub}</div>}
     </div>
@@ -40,7 +62,8 @@ export function ProgressBar({ value, max, zone }: { value: number; max: number; 
 export function Ring({ value, max, size = 96, label, zone }: {
   value: number; max: number; size?: number; label?: string; zone?: 'green' | 'yellow' | 'red';
 }) {
-  const pct = Math.min(1, max > 0 ? value / max : 0);
+  const animated = useCountUp(value);
+  const pct = Math.min(1, max > 0 ? animated / max : 0);
   const r = (size - 10) / 2;
   const c = 2 * Math.PI * r;
   const color = zone === 'red' ? 'var(--red)' : zone === 'yellow' ? 'var(--yellow)' : 'var(--green)';
@@ -54,7 +77,7 @@ export function Ring({ value, max, size = 96, label, zone }: {
         style={{ transition: 'stroke-dasharray 0.6s ease' }}
       />
       <text x="50%" y="50%" dominantBaseline="central" textAnchor="middle" className="ring-text">
-        {Math.round(value)}
+        {Math.round(animated)}
       </text>
     </svg>
   );

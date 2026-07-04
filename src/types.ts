@@ -29,6 +29,7 @@ export interface UserProfile {
   advancedMode: boolean;        // progressive disclosure toggle
   darkMode: boolean;
   wakeTime: string;             // "06:30"
+  timezone?: string;            // IANA tz, auto-detected; used by server-side push
 }
 
 // ---------- Workouts ----------
@@ -239,6 +240,14 @@ export interface AppData {
   events: CalendarEvent[];
   waterUnit: 'oz' | 'ml' | 'cups';
   notifPrefs: NotifPrefs;
-  /** Secret iCal feed URL (Google/Apple/Outlook) — synced via Schedule tab. */
+  /** @deprecated migrated into icalFeeds on load */
   icalUrl?: string;
+  /** Linked calendar feeds (home / work / etc.) — managed in Settings. */
+  icalFeeds?: CalendarFeed[];
+}
+
+export interface CalendarFeed {
+  id: string;
+  name: string;                 // "Home (iCloud)", "Work"
+  url: string;                  // secret iCal address
 }

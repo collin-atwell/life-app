@@ -87,7 +87,7 @@ function Shell() {
         {tab === 'nutrition' && <Nutrition />}
         {tab === 'recovery' && <Recovery />}
         {tab === 'journal' && <Journal />}
-        {tab === 'schedule' && <Schedule />}
+        {tab === 'schedule' && <Schedule go={setTab} />}
         {tab === 'settings' && <Settings />}
       </main>
     </div>

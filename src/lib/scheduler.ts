@@ -1,9 +1,13 @@
 import { addDays, format, parseISO } from 'date-fns';
 import type { AppData, CalendarEvent } from '../types';
-import { dayStrain, deloadSuggested, fmtDate, recoveryScore } from './calc';
+import {
+  dayStrain, deloadSuggested, estimateDayMinutes, fmtDate, muscleRecovery,
+  nextProgramDay, recoveryScore,
+} from './calc';
 
 const toMin = (t: string) => { const [h, m] = t.split(':').map(Number); return h * 60 + m; };
 const toTime = (min: number) => `${String(Math.floor(min / 60)).padStart(2, '0')}:${String(min % 60).padStart(2, '0')}`;
+const DAY_END_MIN = 22 * 60;
 
 interface Gap { start: number; end: number }
 
@@ -44,60 +48,102 @@ export function generateDayPlan(data: AppData, date: string): DayPlan {
   const busyScore = meetings.reduce((t, e) => t + (toMin(e.end) - toMin(e.start)), 0) / 60;
   const deload = deloadSuggested(data);
 
-  const mk = (start: number, dur: number, title: string, type: CalendarEvent['type']): CalendarEvent => ({
-    id: `sugg-${date}-${type}-${start}`,
-    date, start: toTime(start), end: toTime(start + dur), title, type, suggested: true,
-  });
+  // Suggestions claim time as they're placed so they don't stack on each other.
+  const claimed: Gap[] = [];
+  const overlapsClaimed = (start: number, end: number) =>
+    claimed.some(c => start < c.end && end > c.start);
+  const mk = (start: number, dur: number, title: string, type: CalendarEvent['type']): CalendarEvent => {
+    claimed.push({ start, end: start + dur });
+    return {
+      id: `sugg-${date}-${type}-${start}`,
+      date, start: toTime(start), end: toTime(start + dur), title, type, suggested: true,
+    };
+  };
+  const findSlot = (dur: number, from: number, to: number): number | null => {
+    for (const g of gaps) {
+      const lo = Math.max(g.start, from);
+      const hi = Math.min(g.end, to);
+      for (let s = lo; s + dur <= hi; s += 15) {
+        if (!overlapsClaimed(s, s + dur)) return s;
+      }
+    }
+    return null;
+  };
 
-  // --- Workout slot ---
+  // --- Workout slot: sized and named from the active program's next day ---
+  const upNext = nextProgramDay(data);
   const alreadyTrained = dayStrain(data, date) > 0 || events.some(e => e.type === 'workout');
   if (!alreadyTrained) {
-    let dur = busyScore > 5 ? 30 : 60;
+    let dur = 60;
     let title = 'Workout';
+    if (upNext) {
+      const day = upNext.program.days[upNext.dayIdx];
+      dur = estimateDayMinutes(day);
+      title = `${upNext.program.name}: ${day.name} (~${dur} min)`;
+    }
     if (rec.zone === 'red' || deload) {
       dur = 30;
-      title = deload ? 'Deload: light movement + mobility' : 'Active recovery (walk / easy spin)';
+      title = deload ? 'Deload: light movement + mobility (30 min)' : 'Active recovery — walk / easy spin (30 min)';
     } else if (rec.zone === 'yellow') {
-      title = 'Moderate workout (RPE ≤ 7)';
-    } else {
-      title = busyScore > 5 ? 'Quick high-intensity circuit' : 'Full workout — recovery is green, push it';
+      title += ' — keep RPE ≤ 7';
     }
-    // Prefer morning (before 12), then late afternoon (15:00-18:00).
-    const slot =
-      gaps.find(g => g.start >= 6 * 60 && g.start < 12 * 60 && g.end - g.start >= dur + 15)
-      ?? gaps.find(g => g.start >= 14 * 60 && g.end - g.start >= dur + 15)
-      ?? gaps.find(g => g.end - g.start >= dur + 15);
-    if (slot) {
-      const start = Math.max(slot.start + 5, slot.start);
-      suggestions.push(mk(start, dur, title, 'workout'));
+    if (busyScore > 5 && rec.zone === 'green' && dur > 45) {
+      notes.push(`Heavy meeting day — if ${dur} min won't fit, swap in a 20-min circuit and keep the program day for tomorrow.`);
+    }
+    const start =
+      findSlot(dur + 10, 6 * 60, 12 * 60)          // prefer morning
+      ?? findSlot(dur + 10, 14 * 60, 20 * 60)      // then afternoon/evening
+      ?? findSlot(dur + 10, 6 * 60, DAY_END_MIN);
+    if (start !== null) {
+      suggestions.push(mk(start + 5, dur, title, 'workout'));
       const preMeal = start - 90;
-      if (preMeal > 6 * 60) {
-        notes.push(`Workout at ${toTime(start)} — eat carbs + protein around ${toTime(preMeal)} to fuel it.`);
-      }
-      notes.push(`Post-workout: get a protein-forward meal within an hour of ${toTime(start + dur)}.`);
+      if (preMeal > 6 * 60) notes.push(`Workout at ${toTime(start + 5)} — eat carbs + protein around ${toTime(preMeal)} to fuel it.`);
+      notes.push(`Post-workout: protein-forward meal within an hour of ${toTime(start + 5 + dur)}.`);
     } else {
-      notes.push('No free slot fits a workout today — consider a 15-min bodyweight circuit between meetings, or shift a lower-priority event.');
+      notes.push('No free slot fits a full workout today — consider a 15-min bodyweight circuit between meetings.');
     }
   }
 
-  // --- Meal anchors (only where a gap exists) ---
+  // --- Meal anchors: each meal gets suggested unless one is already scheduled in its window ---
   const mealWindows: { label: string; from: number; to: number }[] = [
-    { label: 'Breakfast', from: 6 * 60 + 30, to: 9 * 60 },
-    { label: 'Lunch', from: 11 * 60 + 30, to: 13 * 60 + 30 },
-    { label: 'Dinner', from: 17 * 60 + 30, to: 19 * 60 + 30 },
+    { label: 'Breakfast', from: 6 * 60 + 30, to: 9 * 60 + 30 },
+    { label: 'Lunch', from: 11 * 60 + 30, to: 14 * 60 },
+    { label: 'Dinner', from: 17 * 60 + 30, to: 20 * 60 },
   ];
   for (const w of mealWindows) {
-    if (events.some(e => e.type === 'meal')) break;
-    const gap = gaps.find(g => g.end > w.from && g.start < w.to && Math.min(g.end, w.to) - Math.max(g.start, w.from) >= 20);
-    if (gap) suggestions.push(mk(Math.max(gap.start, w.from), 30, w.label, 'meal'));
+    const alreadyPlanned = events.some(e =>
+      e.type === 'meal' && toMin(e.start) < w.to + 60 && toMin(e.end) > w.from - 60);
+    if (alreadyPlanned) continue;
+    const start = findSlot(30, w.from, w.to);
+    if (start !== null) suggestions.push(mk(start, 30, w.label, 'meal'));
   }
 
-  // --- Recovery block ---
-  if (rec.zone !== 'green' || deload) {
-    const evening = gaps.find(g => g.start >= 16 * 60 && g.end - g.start >= 25);
-    if (evening) {
-      suggestions.push(mk(evening.start + 10, 20, 'Stretch + foam roll fatigued muscles', 'recovery'));
-      notes.push(`Recovery window available at ${toTime(evening.start + 10)} — 20 min of mobility will speed things up.`);
+  // --- Recovery schedule: stretching / foam rolling / meditation / rest-day mobility ---
+  const alreadyRecovery = events.some(e => e.type === 'recovery');
+  if (!alreadyRecovery) {
+    const fatigued = muscleRecovery(data, date).filter(m => m.status !== 'fresh').slice(0, 3);
+    if (fatigued.length > 0) {
+      const start = findSlot(20, 16 * 60, 21 * 60) ?? findSlot(20, 6 * 60, DAY_END_MIN);
+      if (start !== null) {
+        suggestions.push(mk(start, 20, `Stretch + foam roll: ${fatigued.map(f => f.muscle).join(', ')}`, 'recovery'));
+      }
+    } else if (alreadyTrained || suggestions.some(s => s.type === 'workout')) {
+      // training day → evening mobility to wind down
+      const start = findSlot(20, 16 * 60, 21 * 60);
+      if (start !== null) suggestions.push(mk(start, 20, 'Mobility flow — hips, shoulders, spine', 'recovery'));
+    } else {
+      // true rest day
+      const start = findSlot(25, 9 * 60, 20 * 60);
+      if (start !== null) suggestions.push(mk(start, 25, 'Rest-day yoga / easy walk', 'recovery'));
+    }
+    // Meditation when stress or meeting load is high
+    const journal = data.journal.find(j => j.date === date);
+    if ((journal && journal.stress >= 6) || busyScore >= 5) {
+      const start = findSlot(10, 12 * 60, 21 * 60);
+      if (start !== null) {
+        suggestions.push(mk(start, 10, 'Meditation / breathwork (10 min)', 'recovery'));
+        notes.push('Stress is running high — a 10-minute breathing session measurably drops resting HR.');
+      }
     }
   }
 

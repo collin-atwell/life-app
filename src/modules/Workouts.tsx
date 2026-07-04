@@ -7,7 +7,8 @@ import { useApp } from '../state/AppContext';
 import { Card, Chip, Field, Modal } from '../components/ui';
 import { ALL_EQUIPMENT, EXERCISES, EXERCISE_MAP, MUSCLE_GROUPS } from '../data/exercises';
 import {
-  muscleRecovery, oneRepMax, personalRecords, today, workoutVolume,
+  estimateDayMinutes, muscleRecovery, nextProgramDay, oneRepMax, personalRecords,
+  today, workoutVolume,
 } from '../lib/calc';
 import type {
   ClimbAscent, ClimbWorkout, Equipment, Exercise, LoggedExercise, Program,
@@ -160,19 +161,35 @@ function StrengthLogger() {
   };
 
   if (!inProgress) {
+    const upNext = nextProgramDay(data);
     return (
       <Card title="Start a workout">
         {activeProgram ? (
           <>
             <p className="small muted mb-8">Active program: <strong>{activeProgram.name}</strong></p>
+            {upNext && (
+              <div className="up-next mb-8">
+                <div className="flex-between">
+                  <div>
+                    <span className="badge badge-accent">UP NEXT</span>
+                    <div className="list-item-title mt-8">{upNext.program.days[upNext.dayIdx].name}</div>
+                    <div className="list-item-sub">
+                      ~{estimateDayMinutes(upNext.program.days[upNext.dayIdx])} min · based on your last logged {upNext.program.name} session
+                    </div>
+                  </div>
+                  <button className="btn" onClick={() => startFromProgramDay(activeProgram, upNext.dayIdx)}>Start</button>
+                </div>
+              </div>
+            )}
+            <p className="small muted mb-8">Not the right day? Pick any:</p>
             <div className="list">
               {activeProgram.days.map((day, i) => (
-                <div key={i} className="list-item">
+                <div key={i} className="list-item" style={upNext?.dayIdx === i ? { outline: '2px solid var(--accent)' } : undefined}>
                   <div className="list-item-main">
-                    <div className="list-item-title">{day.name}</div>
-                    <div className="list-item-sub">{day.exercises.map(e => EXERCISE_MAP[e.exerciseId]?.name).filter(Boolean).slice(0, 4).join(', ')}…</div>
+                    <div className="list-item-title">{day.name}{upNext?.dayIdx === i ? ' ←' : ''}</div>
+                    <div className="list-item-sub">~{estimateDayMinutes(day)} min · {day.exercises.map(e => EXERCISE_MAP[e.exerciseId]?.name).filter(Boolean).slice(0, 4).join(', ')}…</div>
                   </div>
-                  <button className="btn btn-sm" onClick={() => startFromProgramDay(activeProgram, i)}>Start</button>
+                  <button className="btn btn-sm btn-secondary" onClick={() => startFromProgramDay(activeProgram, i)}>Start</button>
                 </div>
               ))}
             </div>

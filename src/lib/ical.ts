@@ -1,5 +1,5 @@
 import { addDays, format, parseISO } from 'date-fns';
-import type { AppData, CalendarEvent } from '../types';
+import type { AppData, CalendarEvent, CalendarFeed } from '../types';
 import { getCloudConfig } from './cloud';
 import { fmtDate, today } from './calc';
 
@@ -146,8 +146,8 @@ export async function fetchIcs(url: string): Promise<string> {
 
 const hhmm = (d: Date) => `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
 
-/** Convert a feed into CalendarEvents for the sync window (ids prefixed "ical-"). */
-export async function syncCalendarFeed(url: string): Promise<CalendarEvent[]> {
+/** Convert a feed into CalendarEvents for the sync window (ids prefixed per feed). */
+export async function syncCalendarFeed(url: string, feedId = 'default'): Promise<CalendarEvent[]> {
   const raw = await fetchIcs(url);
   const windowStart = parseISO(fmtDate(addDays(parseISO(today()), -WINDOW_BACK_DAYS)));
   const windowEnd = parseISO(fmtDate(addDays(parseISO(today()), WINDOW_AHEAD_DAYS)));
@@ -158,7 +158,7 @@ export async function syncCalendarFeed(url: string): Promise<CalendarEvent[]> {
     for (const occ of occurrences(ev, new Date(windowStart), new Date(windowEnd))) {
       const end = new Date(occ.getTime() + durMs);
       events.push({
-        id: `ical-${ev.uid || ev.summary}-${format(occ, 'yyyyMMddHHmm')}`,
+        id: `ical-${feedId}-${ev.uid || ev.summary}-${format(occ, 'yyyyMMddHHmm')}`,
         date: fmtDate(occ),
         start: hhmm(occ),
         end: hhmm(end.getDate() === occ.getDate() ? end : new Date(occ.getFullYear(), occ.getMonth(), occ.getDate(), 23, 59)),
@@ -170,10 +170,33 @@ export async function syncCalendarFeed(url: string): Promise<CalendarEvent[]> {
   return events;
 }
 
-/** Merge freshly-synced feed events into AppData (replaces previous import). */
-export function mergeCalendarEvents(data: AppData, imported: CalendarEvent[]): AppData {
+/** Replace one feed's imported events. */
+export function mergeFeedEvents(data: AppData, feedId: string, imported: CalendarEvent[]): AppData {
   return {
     ...data,
-    events: [...data.events.filter(e => !e.id.startsWith('ical-')), ...imported],
+    events: [...data.events.filter(e => !e.id.startsWith(`ical-${feedId}-`)), ...imported],
   };
+}
+
+/** Drop one feed's imported events entirely. */
+export function removeFeedEvents(data: AppData, feedId: string): AppData {
+  return { ...data, events: data.events.filter(e => !e.id.startsWith(`ical-${feedId}-`)) };
+}
+
+export interface FeedSyncResult { feed: CalendarFeed; count?: number; error?: string }
+
+/** Sync every linked feed; per-feed errors don't block the others. */
+export async function syncAllFeeds(data: AppData): Promise<{ data: AppData; results: FeedSyncResult[] }> {
+  let next = data;
+  const results: FeedSyncResult[] = [];
+  for (const feed of data.icalFeeds ?? []) {
+    try {
+      const imported = await syncCalendarFeed(feed.url, feed.id);
+      next = mergeFeedEvents(next, feed.id, imported);
+      results.push({ feed, count: imported.length });
+    } catch (e) {
+      results.push({ feed, error: (e as Error).message });
+    }
+  }
+  return { data: next, results };
 }

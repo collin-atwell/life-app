@@ -146,10 +146,32 @@ backend changes that. The practical path: a bridge app like **Health Auto Export
 the app's `SleepEntry` model already has the fields. Ask Claude to build the
 receiving endpoint when you're ready.
 
-## Later (needs the backend above, ~30 extra min when you want it)
+## Part 4: Push notifications with the app closed (≈10 min)
 
-**Push notifications with the app closed** — the service worker already listens for
-web-push events (`public/sw.js`). Completing it requires a Supabase Edge Function
-that stores push subscriptions and a scheduled job (cron) that sends VAPID-signed
-pushes for your reminder times. Ask Claude to build it once Parts 1–2 are live,
-since it needs your deployed URL + Supabase project to test against.
+All the code is written — the service worker receives pushes (`public/sw.js`),
+devices register via Settings → Notifications → Background push, and
+`supabase/functions/send-reminders/index.ts` computes each user's due reminders
+in their timezone and pushes them. Four dashboard steps:
+
+1. **Table**: SQL Editor → run the updated `supabase/schema.sql`
+   (adds `push_subscriptions`; the whole file is safe to re-run).
+
+2. **Secrets**: **Edge Functions → Secrets** → add:
+   - `VAPID_PUBLIC_KEY` — the value of `VAPID_PUBLIC_KEY` in `src/lib/push.ts`
+   - `VAPID_PRIVATE_KEY` — the private key generated alongside it (Claude has it
+     from the session where the keypair was created; never commit it to the repo)
+
+3. **Function**: **Edge Functions → Deploy a new function → Via Editor** → name it
+   exactly `send-reminders` → paste `supabase/functions/send-reminders/index.ts`
+   → Deploy. (If invoking it returns INVALID_CREDENTIALS later, check the
+   verification setting, as with calendar-proxy.)
+
+4. **Schedule it**: **Integrations → Cron** (enable the extension if prompted) →
+   **Create job** → schedule `*/15 * * * *` → job type **Supabase Edge Function**
+   → pick `send-reminders` → POST → Create.
+
+Then on each device: open the installed app → Settings → Notifications →
+**Background push → Enable**. On iPhone the app must be added to the Home Screen
+first (Safari only grants push to installed apps). Reminders now arrive with the
+app fully closed: hydration pace checks, 45-min workout heads-ups, and bedtime
+wind-downs, deduplicated per device per day.
