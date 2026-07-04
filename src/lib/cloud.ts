@@ -14,11 +14,13 @@ export const LOCAL_UPDATED_KEY = 'health-hub-updated-at-v1';
 export interface CloudConfig { url: string; anonKey: string }
 
 // Built-in backend: the app's own Supabase project, so users just sign up and
-// log in. The anon key is safe to publish — row-level security (see
-// supabase/schema.sql) means each account can only ever read/write its own row.
+// log in. The publishable key is safe to publish (that's its name) — row-level
+// security (see supabase/schema.sql) means each account can only ever
+// read/write its own row. Note: must be the sb_publishable_ key, not the
+// legacy JWT anon key — the Edge Functions gateway rejects legacy keys.
 export const DEFAULT_CLOUD: CloudConfig = {
   url: 'https://sqwwdzxpiwjaxsyzajjp.supabase.co',
-  anonKey: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InNxd3dkenhwaXdqYXhzeXphampwIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODMwOTkyMzcsImV4cCI6MjA5ODY3NTIzN30.QmQQnuVq4hQ_GKXtAHMgoVpr0RAhyaC17ASvbcT8zWU',
+  anonKey: 'sb_publishable_cuz9jgrtw6_c3WfKDhBQog_gn9vLiFG',
 };
 
 /** True when no custom backend override is stored (i.e. using the built-in one). */
