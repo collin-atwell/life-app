@@ -3,6 +3,7 @@ import type { ReactNode } from 'react';
 import type { AppData } from '../types';
 import { buildDemoData, buildEmptyData } from '../data/demo';
 import { autoPush, LOCAL_UPDATED_KEY, pullIfNewer } from '../lib/cloud';
+import { refreshCommunityFoods } from '../lib/communityFoods';
 
 const STORAGE_KEY = 'health-hub-data-v1';
 const ONBOARD_KEY = 'health-hub-onboarded-v1';
@@ -65,6 +66,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     document.documentElement.dataset.theme = data.profile.darkMode ? 'dark' : 'light';
   }, [data.profile.darkMode]);
+
+  // Community food DB: refresh the offline cache in the background (≤1x/day).
+  useEffect(() => { refreshCommunityFoods(); }, []);
 
   // Cloud: on startup, adopt the remote state if another device saved more recently.
   useEffect(() => {

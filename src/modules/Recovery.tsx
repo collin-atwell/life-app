@@ -23,6 +23,8 @@ export default function Recovery() {
   const [soreLevel, setSoreLevel] = useState('5');
   const [sleepHours, setSleepHours] = useState('');
   const [sleepQuality, setSleepQuality] = useState('7');
+  const [rhr, setRhr] = useState('');
+  const [hrv, setHrv] = useState('');
 
   const unit = data.waterUnit;
   const toUnit = (oz: number) => unit === 'oz' ? Math.round(oz) : unit === 'ml' ? Math.round(oz / UNIT_FACTORS.ml) : Math.round((oz / 8) * 10) / 10;
@@ -66,18 +68,25 @@ export default function Recovery() {
               </tbody>
             </table>
           )}
-          <p className="small muted mt-8">
-            📡 Wearable sync (Apple Health / Google Fit / Oura) plugs into the same SleepEntry model — manual entry below for now.
-          </p>
           {!todaysSleep && (
-            <div className="flex mt-8">
-              <Field label="Sleep (hrs)"><input type="number" step="0.5" style={{ width: 90 }} value={sleepHours} onChange={e => setSleepHours(e.target.value)} /></Field>
-              <Field label="Quality 1-10"><input type="number" min={1} max={10} style={{ width: 90 }} value={sleepQuality} onChange={e => setSleepQuality(e.target.value)} /></Field>
-              <button className="btn btn-sm" onClick={() => {
-                if (!sleepHours) return;
-                update(d => ({ ...d, sleep: [...d.sleep, { date, hours: +sleepHours, quality: +sleepQuality || 7 }] }));
-              }}>Log sleep</button>
-            </div>
+            <>
+              <div className="flex mt-8">
+                <Field label="Sleep (hrs)"><input type="number" step="0.5" style={{ width: 84 }} value={sleepHours} onChange={e => setSleepHours(e.target.value)} /></Field>
+                <Field label="Quality 1-10"><input type="number" min={1} max={10} style={{ width: 84 }} value={sleepQuality} onChange={e => setSleepQuality(e.target.value)} /></Field>
+                <Field label="Resting HR"><input type="number" placeholder="opt." style={{ width: 84 }} value={rhr} onChange={e => setRhr(e.target.value)} /></Field>
+                <Field label="HRV (ms)"><input type="number" placeholder="opt." style={{ width: 84 }} value={hrv} onChange={e => setHrv(e.target.value)} /></Field>
+                <button className="btn btn-sm" onClick={() => {
+                  if (!sleepHours) return;
+                  update(d => ({ ...d, sleep: [...d.sleep, {
+                    date, hours: +sleepHours, quality: +sleepQuality || 7,
+                    restingHr: +rhr || undefined, hrv: +hrv || undefined,
+                  }] }));
+                }}>Log</button>
+              </div>
+              <p className="small muted mt-8">
+                Resting HR and HRV are optional — copy them from your Watch/Health app each morning and the recovery score uses them.
+              </p>
+            </>
           )}
         </Card>
 

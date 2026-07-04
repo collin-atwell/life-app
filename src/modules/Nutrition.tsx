@@ -5,8 +5,11 @@ import {
 } from 'recharts';
 import { useApp } from '../state/AppContext';
 import { Card, Chip, Field, Modal, ProgressBar, Stat, zoneOf } from '../components/ui';
+import { BarcodeScanner } from '../components/BarcodeScanner';
 import { FOODS } from '../data/foods';
 import { fmtDate, foodFor, macroTargets, mealMacros, mealsOn, today } from '../lib/calc';
+import { getCommunityFoods, publishFood } from '../lib/communityFoods';
+import { searchFoods } from '../lib/foodSearch';
 import type { DietType, FoodItem, MealSlot } from '../types';
 
 const uid = () => `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
@@ -16,7 +19,9 @@ const SLOTS: MealSlot[] = ['breakfast', 'lunch', 'dinner', 'snack'];
 // from foods matching the user's diet type.
 function suggestMeals(data: ReturnType<typeof useApp>['data'], remaining: { calories: number; protein: number; carbs: number; fat: number }): { food: FoodItem; reason: string }[] {
   const diet = data.profile.dietType;
-  const pool = [...FOODS, ...data.customFoods].filter(f => !f.tags || f.tags.includes(diet) || diet === 'balanced');
+  const pool = [...FOODS, ...data.customFoods]
+    .filter(f => !f.treat) // treats are for logging honestly, not suggesting
+    .filter(f => !f.tags || f.tags.includes(diet) || diet === 'balanced');
   const proteinGap = remaining.protein;
   const calGap = remaining.calories;
   if (calGap <= 100) return [];
@@ -33,19 +38,32 @@ function suggestMeals(data: ReturnType<typeof useApp>['data'], remaining: { calo
 }
 
 function FoodSearch({ onPick, onClose, slot }: { onPick: (f: FoodItem, servings: number) => void; onClose: () => void; slot: MealSlot }) {
-  const { data, update } = useApp();
+  const { data, update, celebrate } = useApp();
   const [q, setQ] = useState('');
   const [servings, setServings] = useState('1');
   const [customOpen, setCustomOpen] = useState(false);
+  const [scanning, setScanning] = useState(false);
+  const [share, setShare] = useState(true);
   const [custom, setCustom] = useState({ name: '', serving: '1 serving', calories: '', protein: '', carbs: '', fat: '' });
-  const all = [...FOODS, ...data.customFoods];
+  const all = [...FOODS, ...data.customFoods, ...getCommunityFoods()];
   const favs = all.filter(f => data.favoriteFoodIds.includes(f.id));
-  const results = q ? all.filter(f => f.name.toLowerCase().includes(q.toLowerCase())) : favs;
+  const results = q ? searchFoods(all, q) : favs;
+
+  const addAndLog = async (food: Omit<FoodItem, 'id'>, publish: boolean) => {
+    const f: FoodItem = { ...food, id: `custom-${uid()}` };
+    update(d => ({ ...d, customFoods: [...d.customFoods, f] }));
+    if (publish) {
+      const err = await publishFood(food);
+      if (!err) celebrate('🌍 Shared with the community — thanks!');
+    }
+    onPick(f, +servings || 1);
+  };
 
   return (
     <Modal title={`Log ${slot}`} onClose={onClose} wide>
       <div className="form-row">
-        <input placeholder="Search 60+ seeded foods… (50k+ food API + barcode scanner ready for integration)" value={q} onChange={e => setQ(e.target.value)} autoFocus />
+        <input placeholder="Search foods… (typos & word order are fine)" value={q} onChange={e => setQ(e.target.value)} autoFocus />
+        <button className="btn btn-secondary" onClick={() => setScanning(true)} style={{ maxWidth: 110 }}>📷 Scan</button>
         <Field label="Servings"><input type="number" step="0.5" min="0.5" style={{ maxWidth: 90 }} value={servings} onChange={e => setServings(e.target.value)} /></Field>
       </div>
       {!q && favs.length > 0 && <p className="small muted">⭐ Your favorites (search to see everything)</p>}
@@ -79,18 +97,26 @@ function FoodSearch({ onPick, onClose, slot }: { onPick: (f: FoodItem, servings:
               <Field key={k} label={k}><input type="number" value={custom[k]} onChange={e => setCustom({ ...custom, [k]: e.target.value })} /></Field>
             ))}
           </div>
+          <label className="flex small mb-8">
+            <input type="checkbox" style={{ width: 'auto' }} checked={share} onChange={e => setShare(e.target.checked)} />
+            🌍 Share with all Health Hub users (community database)
+          </label>
           <button className="btn btn-sm" onClick={() => {
             if (!custom.name) return;
-            const f: FoodItem = {
-              id: `custom-${uid()}`, name: custom.name, serving: custom.serving,
+            addAndLog({
+              name: custom.name, serving: custom.serving,
               calories: +custom.calories || 0, protein: +custom.protein || 0, carbs: +custom.carbs || 0, fat: +custom.fat || 0,
-            };
-            update(d => ({ ...d, customFoods: [...d.customFoods, f] }));
-            onPick(f, +servings || 1);
+            }, share);
           }}>Save & log custom food</button>
         </div>
       ) : (
         <button className="btn btn-secondary btn-sm" onClick={() => setCustomOpen(true)}>+ Custom food / meal builder</button>
+      )}
+      {scanning && (
+        <BarcodeScanner
+          onClose={() => setScanning(false)}
+          onFound={food => { setScanning(false); addAndLog(food, share); }}
+        />
       )}
     </Modal>
   );

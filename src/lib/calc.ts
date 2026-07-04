@@ -4,6 +4,7 @@ import type {
 } from '../types';
 import { EXERCISE_MAP } from '../data/exercises';
 import { FOOD_MAP } from '../data/foods';
+import { communityFoodById } from './communityFoods';
 
 export const fmtDate = (d: Date) => format(d, 'yyyy-MM-dd');
 export const today = () => fmtDate(new Date());
@@ -94,7 +95,7 @@ export function macroTargets(data: AppData, date: string): MacroTarget {
 }
 
 export function foodFor(data: AppData, id: string): FoodItem | undefined {
-  return FOOD_MAP[id] ?? data.customFoods.find(f => f.id === id);
+  return FOOD_MAP[id] ?? data.customFoods.find(f => f.id === id) ?? communityFoodById(id);
 }
 
 export function mealMacros(data: AppData, meals: MealEntry[]) {

@@ -145,6 +145,8 @@ export interface FoodItem {
   carbs: number;
   fat: number;
   tags?: DietType[];            // which diets it suits
+  treat?: boolean;              // loggable but excluded from meal suggestions
+  barcode?: string;             // UPC/EAN when added via scanner
 }
 
 export type MealSlot = 'breakfast' | 'lunch' | 'dinner' | 'snack';
