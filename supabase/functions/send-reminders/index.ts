@@ -96,7 +96,16 @@ function dueReminders(data: any): Reminder[] {
   return out;
 }
 
+// Browser calls (the in-app "Send test push" button) require CORS.
+const cors = {
+  'Access-Control-Allow-Origin': '*',
+  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
+  'Access-Control-Allow-Methods': 'POST, OPTIONS',
+};
+
 Deno.serve(async (req) => {
+  if (req.method === 'OPTIONS') return new Response('ok', { headers: cors });
+
   // Test mode: a signed-in user POSTs {"test":true} and gets an immediate
   // test push on all THEIR devices (validates the whole pipeline instantly).
   const body = await req.json().catch(() => ({}));
@@ -104,7 +113,7 @@ Deno.serve(async (req) => {
     const jwt = (req.headers.get('Authorization') ?? '').replace(/^Bearer\s+/i, '');
     const { data: userData } = await supabase.auth.getUser(jwt);
     const user = userData?.user;
-    if (!user) return new Response(JSON.stringify({ error: 'sign in first' }), { status: 401 });
+    if (!user) return new Response(JSON.stringify({ error: 'sign in first' }), { status: 401, headers: cors });
     const { data: mySubs } = await supabase
       .from('push_subscriptions').select('endpoint, subscription').eq('user_id', user.id);
     let ok = 0;
@@ -118,7 +127,7 @@ Deno.serve(async (req) => {
       } catch { /* stale sub */ }
     }
     return new Response(JSON.stringify({ test: true, devices: mySubs?.length ?? 0, delivered: ok }), {
-      headers: { 'Content-Type': 'application/json' },
+      headers: { ...cors, 'Content-Type': 'application/json' },
     });
   }
 
