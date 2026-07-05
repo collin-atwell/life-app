@@ -11,7 +11,7 @@ const uid = () => `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
 const toMin = (t: string) => { const [h, m] = t.split(':').map(Number); return h * 60 + m; };
 
 const DAY_START = 6 * 60;
-const DAY_END = 22 * 60;
+const DAY_END = 24 * 60; // through midnight so bedtime is always visible
 const PX_PER_HOUR = 44;
 
 function Timeline({ events, onAccept, onRemove }: {
@@ -20,25 +20,28 @@ function Timeline({ events, onAccept, onRemove }: {
   onRemove: (e: CalendarEvent) => void;
 }) {
   const hours = Array.from({ length: (DAY_END - DAY_START) / 60 }, (_, i) => DAY_START / 60 + i);
-  const visible = events.filter(e => e.type !== 'sleep' && toMin(e.end) > DAY_START && toMin(e.start) < DAY_END);
+  const visible = events.filter(e => toMin(e.start) < DAY_END && (toMin(e.end) > DAY_START || toMin(e.end) < toMin(e.start)));
   return (
     <div className="timeline" style={{ height: hours.length * PX_PER_HOUR }}>
       {hours.map((h, i) => (
         <div key={h} className="timeline-hour" style={{ top: i * PX_PER_HOUR }}>
-          <span className="timeline-hour-label">{h > 12 ? h - 12 : h}{h >= 12 ? 'pm' : 'am'}</span>
+          <span className="timeline-hour-label">{h === 12 ? '12pm' : h > 12 ? `${h - 12}pm` : `${h}am`}</span>
         </div>
       ))}
       {visible.map(e => {
-        const top = ((Math.max(toMin(e.start), DAY_START) - DAY_START) / 60) * PX_PER_HOUR;
-        const height = Math.max(20, ((Math.min(toMin(e.end), DAY_END) - Math.max(toMin(e.start), DAY_START)) / 60) * PX_PER_HOUR - 2);
+        const startMin = Math.max(toMin(e.start), DAY_START);
+        // overnight events (bedtime) wrap past midnight — clip to the bottom
+        const endMin = toMin(e.end) <= toMin(e.start) ? DAY_END : Math.min(toMin(e.end), DAY_END);
+        const top = ((startMin - DAY_START) / 60) * PX_PER_HOUR;
+        const height = Math.max(20, ((endMin - startMin) / 60) * PX_PER_HOUR - 2);
         return (
           <div key={e.id} className={`timeline-event ev-${e.type} ${e.suggested ? 'ev-suggested' : ''}`} style={{ top, height }}>
-            <span>{e.start} {e.title}</span>
-            {e.suggested ? (
+            <span>{e.start} {e.type === 'sleep' ? `${e.title} 😴` : e.title}</span>
+            {e.suggested && e.type !== 'sleep' ? (
               <button className="btn btn-sm" style={{ marginLeft: 6, padding: '1px 8px' }} onClick={() => onAccept(e)}>✓ accept</button>
-            ) : (
+            ) : !e.suggested ? (
               <button className="btn-icon" style={{ padding: '0 4px', float: 'right' }} aria-label="Delete" onClick={() => onRemove(e)}>✕</button>
-            )}
+            ) : null}
           </div>
         );
       })}
@@ -56,7 +59,7 @@ export default function Schedule({ go }: { go: (tab: string) => void }) {
   const plan = useMemo(() => generateDayPlan(data, date), [data, date]);
   const dayEvents = data.events.filter(e => e.date === date);
   const sleepSugg = plan.suggestions.find(s => s.type === 'sleep');
-  const merged = [...dayEvents, ...plan.suggestions.filter(s => s.type !== 'sleep' && !dayEvents.some(e => e.type === s.type && e.title === s.title))];
+  const merged = [...dayEvents, ...plan.suggestions.filter(s => !dayEvents.some(e => e.type === s.type && e.title === s.title))];
   const feeds = data.icalFeeds ?? [];
 
   const accept = (e: CalendarEvent) => {

@@ -96,14 +96,46 @@ body { overflow-x: clip; }
 .nav-tab:hover { color: var(--text); }
 .nav-tab.active { background: var(--accent); color: #fff; }
 
-/* Mobile bottom nav */
+/* ---------- Mobile: spinning menu wheel replaces the nav bar ---------- */
+.wheel-fab { display: none; }
 @media (max-width: 720px) {
-  .nav-tabs {
-    position: fixed; bottom: 0; left: 0; right: 0; z-index: 50;
-    border-radius: 0; justify-content: space-around; padding: 6px 4px calc(6px + env(safe-area-inset-bottom));
-    border-top: 1px solid var(--border);
+  .nav-tabs { display: none; }
+  .wheel-fab {
+    display: flex; align-items: center; justify-content: center;
+    position: fixed; left: calc(14px + env(safe-area-inset-left)); bottom: calc(14px + env(safe-area-inset-bottom));
+    z-index: 130; width: 60px; height: 60px; border-radius: 50%; border: none;
+    background: var(--accent); color: #fff; font-size: 1.45rem; cursor: pointer;
+    box-shadow: 0 6px 20px rgba(16, 24, 40, 0.35);
+    transition: transform 0.3s cubic-bezier(0.34, 1.56, 0.64, 1), background 0.2s;
   }
-  .nav-tab { padding: 8px 10px; font-size: 0.78rem; }
+  .wheel-fab:active { transform: scale(0.92); }
+  .wheel-fab.open { transform: rotate(90deg); background: var(--red); }
+}
+
+.wheel-backdrop {
+  position: fixed; inset: 0; z-index: 120;
+  background: rgba(10, 15, 25, 0.5);
+  backdrop-filter: blur(3px); -webkit-backdrop-filter: blur(3px);
+  touch-action: none; animation: fadeIn 0.2s ease;
+}
+.wheel-item {
+  position: fixed; z-index: 121; transform: translate(-50%, 50%);
+  width: 64px; height: 64px; border-radius: 50%;
+  border: 1.5px solid var(--border); background: var(--surface);
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  cursor: pointer; box-shadow: var(--shadow);
+  transition: transform 0.25s cubic-bezier(0.34, 1.56, 0.64, 1), opacity 0.2s;
+  animation: wheelIn 0.35s cubic-bezier(0.34, 1.56, 0.64, 1) backwards;
+}
+.wheel-item .wheel-emoji { font-size: 1.35rem; line-height: 1.2; }
+.wheel-item .wheel-label { font-size: 0.56rem; font-weight: 750; color: var(--text-dim); text-transform: uppercase; letter-spacing: 0.03em; }
+.wheel-item.wheel-current { border-color: var(--accent); }
+.wheel-item.wheel-focus { transform: translate(-50%, 50%) scale(1.22); border-color: var(--accent); box-shadow: 0 0 0 4px var(--accent-soft), var(--shadow); }
+.wheel-item.wheel-focus .wheel-label { color: var(--accent); }
+@keyframes wheelIn { from { transform: translate(-50%, 50%) scale(0); opacity: 0; } }
+.wheel-hint {
+  position: fixed; z-index: 121; left: 0; right: 0; bottom: calc(88px + env(safe-area-inset-bottom));
+  text-align: center; color: #fff; font-size: 0.75rem; opacity: 0.75; pointer-events: none;
 }
 
 .page { display: flex; flex-direction: column; gap: 16px; }

@@ -40,7 +40,10 @@ export interface DayPlan {
  */
 export function generateDayPlan(data: AppData, date: string): DayPlan {
   const events = data.events.filter(e => e.date === date);
-  const gaps = freeGaps(events);
+  // Nothing gets scheduled before the user is awake.
+  const wakeMin = toMin(data.profile.wakeTime || '06:30');
+  const dayStart = Math.max(6 * 60, wakeMin);
+  const gaps = freeGaps(events, dayStart);
   const suggestions: CalendarEvent[] = [];
   const notes: string[] = [];
   const rec = recoveryScore(data, date);
@@ -91,13 +94,13 @@ export function generateDayPlan(data: AppData, date: string): DayPlan {
       notes.push(`Heavy meeting day — if ${dur} min won't fit, swap in a 20-min circuit and keep the program day for tomorrow.`);
     }
     const start =
-      findSlot(dur + 10, 6 * 60, 12 * 60)          // prefer morning
-      ?? findSlot(dur + 10, 14 * 60, 20 * 60)      // then afternoon/evening
-      ?? findSlot(dur + 10, 6 * 60, DAY_END_MIN);
+      findSlot(dur + 15, dayStart + 15, 12 * 60)    // prefer morning, ≥15 min after wake
+      ?? findSlot(dur + 15, 14 * 60, 20 * 60)       // then afternoon/evening
+      ?? findSlot(dur + 15, dayStart, DAY_END_MIN);
     if (start !== null) {
       suggestions.push(mk(start + 5, dur, title, 'workout'));
       const preMeal = start - 90;
-      if (preMeal > 6 * 60) notes.push(`Workout at ${toTime(start + 5)} — eat carbs + protein around ${toTime(preMeal)} to fuel it.`);
+      if (preMeal > dayStart) notes.push(`Workout at ${toTime(start + 5)} — eat carbs + protein around ${toTime(preMeal)} to fuel it.`);
       notes.push(`Post-workout: protein-forward meal within an hour of ${toTime(start + 5 + dur)}.`);
     } else {
       notes.push('No free slot fits a full workout today — consider a 15-min bodyweight circuit between meetings.');
@@ -106,16 +109,26 @@ export function generateDayPlan(data: AppData, date: string): DayPlan {
 
   // --- Meal anchors: each meal gets suggested unless one is already scheduled in its window ---
   const mealWindows: { label: string; from: number; to: number }[] = [
-    { label: 'Breakfast', from: 6 * 60 + 30, to: 9 * 60 + 30 },
+    { label: 'Breakfast', from: Math.max(wakeMin + 15, 6 * 60 + 30), to: Math.max(wakeMin + 15, 6 * 60 + 30) + 180 },
     { label: 'Lunch', from: 11 * 60 + 30, to: 14 * 60 },
     { label: 'Dinner', from: 17 * 60 + 30, to: 20 * 60 },
   ];
+  let breakfastEnd: number | null = null;
   for (const w of mealWindows) {
     const alreadyPlanned = events.some(e =>
       e.type === 'meal' && toMin(e.start) < w.to + 60 && toMin(e.end) > w.from - 60);
     if (alreadyPlanned) continue;
     const start = findSlot(30, w.from, w.to);
-    if (start !== null) suggestions.push(mk(start, 30, w.label, 'meal'));
+    if (start !== null) {
+      suggestions.push(mk(start, 30, w.label, 'meal'));
+      if (w.label === 'Breakfast') breakfastEnd = start + 30;
+    }
+  }
+
+  // --- Supplements & medications: right after breakfast (or shortly after waking) ---
+  const suppStart = breakfastEnd ?? findSlot(5, wakeMin + 15, wakeMin + 150);
+  if (suppStart !== null && !overlapsClaimed(suppStart, suppStart + 5)) {
+    suggestions.push(mk(suppStart, 5, '💊 Supplements & medications', 'recovery'));
   }
 
   // --- Recovery schedule: stretching / foam rolling / meditation / rest-day mobility ---
@@ -136,14 +149,16 @@ export function generateDayPlan(data: AppData, date: string): DayPlan {
       const start = findSlot(25, 9 * 60, 20 * 60);
       if (start !== null) suggestions.push(mk(start, 25, 'Rest-day yoga / easy walk', 'recovery'));
     }
-    // Meditation when stress or meeting load is high
+  }
+
+  // --- Meditation: a daily 10-min wind-down (prioritized when stress runs high) ---
+  {
     const journal = data.journal.find(j => j.date === date);
-    if ((journal && journal.stress >= 6) || busyScore >= 5) {
-      const start = findSlot(10, 12 * 60, 21 * 60);
-      if (start !== null) {
-        suggestions.push(mk(start, 10, 'Meditation / breathwork (10 min)', 'recovery'));
-        notes.push('Stress is running high — a 10-minute breathing session measurably drops resting HR.');
-      }
+    const stressed = (journal && journal.stress >= 6) || busyScore >= 5;
+    const medStart = findSlot(10, stressed ? 12 * 60 : 19 * 60, 21 * 60 + 30) ?? findSlot(10, 12 * 60, 21 * 60 + 30);
+    if (medStart !== null) {
+      suggestions.push(mk(medStart, 10, '🧘 Meditation / breathwork (10 min)', 'recovery'));
+      if (stressed) notes.push('Stress is running high — a 10-minute breathing session measurably drops resting HR.');
     }
   }
 

@@ -390,10 +390,11 @@ export function nextProgramDay(data: AppData): UpNext | null {
   return { program, dayIdx: lastIdx >= 0 ? (lastIdx + 1) % program.days.length : 0 };
 }
 
-/** Estimated session length for a program day: warm-up + per-set work & rest. */
+/** Estimated session length for a program day: warm-up + per-set work & rest + transitions. */
 export function estimateDayMinutes(day: import('../types').ProgramDay): number {
   const sets = day.exercises.reduce((t, e) => t + e.sets, 0);
-  return Math.round((10 + sets * 2.6) / 5) * 5; // 10 min warm-up, ~2.6 min per set
+  // 12 min warm-up/setup, ~3.2 min per set (work + rest), 2 min per exercise change
+  return Math.round((12 + sets * 3.2 + day.exercises.length * 2) / 5) * 5;
 }
 
 // ---------- Weekly report ----------
