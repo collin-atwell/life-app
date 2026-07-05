@@ -117,7 +117,7 @@ export default function Journal() {
           />
           <div className="flex mb-8 mt-8" role="radiogroup" aria-label="Mood quick select">
             {MOOD_EMOJI.map((e, i) => (
-              <button key={i} className="btn-icon" style={{ fontSize: '1.2rem', opacity: draft.mood === i + 1 ? 1 : 0.4 }}
+              <button key={i} className={`mood-btn ${draft.mood === i + 1 ? 'mood-selected' : ''}`}
                 aria-label={`Mood ${i + 1}`} onClick={() => setDraft({ ...draft, mood: i + 1 })}>{e}</button>
             ))}
           </div>

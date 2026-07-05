@@ -24,6 +24,7 @@ export interface UserProfile {
   activityLevel: ActivityLevel;
   goal: Goal;
   goalWeeks: number;            // timeline to reach goal weight
+  goalSetAt?: string;           // yyyy-MM-dd the goal was (re)set — pace counts down from here
   dietType: DietType;
   equipment: Equipment[];
   advancedMode: boolean;        // progressive disclosure toggle

@@ -186,8 +186,11 @@ export default function Nutrition() {
           <ProgressBar value={eaten.calories} max={target.calories} zone={zoneOf(Math.min(1, eaten.calories / target.calories))} />
         </div>
         <p className="small muted mt-8">
-          Goal: <strong>{data.profile.goal}</strong> to {data.profile.goalWeightLbs} lb over {data.profile.goalWeeks} weeks
-          ({Math.abs(target.targetRate).toFixed(1)} lb/wk).
+          {target.goalReached ? (
+            <>🎯 <strong>Goal weight reached</strong> — targets are holding you steady at maintenance. Set a new goal below whenever you're ready.</>
+          ) : (
+            <>Goal: <strong>{data.profile.goal}</strong> to {data.profile.goalWeightLbs} lb · <strong>{target.weeksLeft} weeks left</strong> ({Math.abs(target.targetRate).toFixed(1)} lb/wk needed from your current {data.profile.weightLbs} lb).</>
+          )}
           {target.weeklyTrend !== null && <> Measured trend: {target.weeklyTrend > 0 ? '+' : ''}{target.weeklyTrend.toFixed(1)} lb/wk.</>}
           {target.adjustment !== 0 && <> Auto-adjustment: <strong>{target.adjustment > 0 ? '+' : ''}{target.adjustment} kcal</strong> from your weight trend.</>}
           {target.workoutBonus > 0 && <> Training bonus today: <strong>+{target.workoutBonus} kcal</strong>.</>}
@@ -299,19 +302,20 @@ export default function Nutrition() {
         <div className="chip-row mt-8">
           {(['lose', 'maintain', 'gain'] as const).map(g => (
             <Chip key={g} active={data.profile.goal === g} onClick={() =>
-              update(d => ({ ...d, profile: { ...d.profile, goal: g } }))}>{g}</Chip>
+              update(d => ({ ...d, profile: { ...d.profile, goal: g, goalSetAt: today() } }))}>{g}</Chip>
           ))}
         </div>
         <div className="form-row mt-8">
           <Field label="Goal weight (lb)">
             <input type="number" value={data.profile.goalWeightLbs} onChange={e =>
-              update(d => ({ ...d, profile: { ...d.profile, goalWeightLbs: +e.target.value } }))} />
+              update(d => ({ ...d, profile: { ...d.profile, goalWeightLbs: +e.target.value, goalSetAt: today() } }))} />
           </Field>
           <Field label="Timeline (weeks)">
             <input type="number" min={1} value={data.profile.goalWeeks} onChange={e =>
-              update(d => ({ ...d, profile: { ...d.profile, goalWeeks: +e.target.value } }))} />
+              update(d => ({ ...d, profile: { ...d.profile, goalWeeks: +e.target.value, goalSetAt: today() } }))} />
           </Field>
         </div>
+        <p className="small muted mt-8">Changing any goal setting restarts the timeline from today — calories, protein and hydration recalculate everywhere immediately.</p>
       </Card>
 
       {logSlot && (

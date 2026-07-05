@@ -52,9 +52,10 @@ export function Stat({ label, value, sub, zone }: {
 
 export function ProgressBar({ value, max, zone }: { value: number; max: number; zone?: 'green' | 'yellow' | 'red' }) {
   const pct = Math.min(100, max > 0 ? (value / max) * 100 : 0);
+  const complete = max > 0 && value >= max;
   return (
     <div className="progress-track" role="progressbar" aria-valuenow={Math.round(value)} aria-valuemin={0} aria-valuemax={Math.round(max)}>
-      <div className={`progress-fill ${zone ? `fill-${zone}` : ''}`} style={{ width: `${pct}%` }} />
+      <div className={`progress-fill ${zone ? `fill-${zone}` : ''} ${complete ? 'fill-complete' : ''}`} style={{ width: `${pct}%` }} />
     </div>
   );
 }

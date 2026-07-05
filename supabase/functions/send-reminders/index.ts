@@ -96,7 +96,32 @@ function dueReminders(data: any): Reminder[] {
   return out;
 }
 
-Deno.serve(async () => {
+Deno.serve(async (req) => {
+  // Test mode: a signed-in user POSTs {"test":true} and gets an immediate
+  // test push on all THEIR devices (validates the whole pipeline instantly).
+  const body = await req.json().catch(() => ({}));
+  if (body?.test === true) {
+    const jwt = (req.headers.get('Authorization') ?? '').replace(/^Bearer\s+/i, '');
+    const { data: userData } = await supabase.auth.getUser(jwt);
+    const user = userData?.user;
+    if (!user) return new Response(JSON.stringify({ error: 'sign in first' }), { status: 401 });
+    const { data: mySubs } = await supabase
+      .from('push_subscriptions').select('endpoint, subscription').eq('user_id', user.id);
+    let ok = 0;
+    for (const s of mySubs ?? []) {
+      try {
+        await webpush.sendNotification(s.subscription, JSON.stringify({
+          title: '⚡ Health Hub test push',
+          body: 'Background notifications are working — this arrived from the cloud!',
+        }));
+        ok++;
+      } catch { /* stale sub */ }
+    }
+    return new Response(JSON.stringify({ test: true, devices: mySubs?.length ?? 0, delivered: ok }), {
+      headers: { 'Content-Type': 'application/json' },
+    });
+  }
+
   const { data: subs, error } = await supabase
     .from('push_subscriptions')
     .select('endpoint, user_id, subscription, sent');

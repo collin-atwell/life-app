@@ -21,6 +21,7 @@ function load(): AppData | null {
     data.icalFeeds ??= data.icalUrl ? [{ id: 'default', name: 'My calendar', url: data.icalUrl }] : [];
     delete data.icalUrl;
     data.profile.timezone ??= Intl.DateTimeFormat().resolvedOptions().timeZone;
+    data.profile.goalSetAt ??= new Date().toISOString().slice(0, 10);
     return data;
   } catch {
     return null;

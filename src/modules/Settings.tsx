@@ -326,6 +326,21 @@ export default function Settings() {
                     setPushBusy(false);
                   }}>{pushBusy ? '…' : pushOn ? 'Disable' : 'Enable'}</button>
                 </div>
+                {pushOn && (
+                  <button className="btn btn-sm btn-secondary mt-8" disabled={pushBusy} onClick={async () => {
+                    setPushBusy(true);
+                    try {
+                      const c = getCloudConfig();
+                      const client = c && (await import('../lib/cloud')).cloudClient();
+                      const { data: res, error } = await client!.functions.invoke('send-reminders', { body: { test: true } });
+                      if (error) celebrate(`⚠️ ${error.message}`);
+                      else celebrate(`📲 Test push sent to ${res?.delivered ?? 0}/${res?.devices ?? 0} device(s) — close the app and watch for it!`);
+                    } catch (e) {
+                      celebrate(`⚠️ ${(e as Error).message}`);
+                    }
+                    setPushBusy(false);
+                  }}>Send test push</button>
+                )}
               </div>
             )}
           </>

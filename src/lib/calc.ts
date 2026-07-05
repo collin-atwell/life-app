@@ -45,6 +45,8 @@ export interface MacroTarget {
   weeklyTrend: number | null; // lbs/week measured
   targetRate: number;         // lbs/week desired
   workoutBonus: number;       // extra kcal added for today's training
+  weeksLeft: number;          // remaining goal timeline (counts down from goalSetAt)
+  goalReached: boolean;
 }
 
 /**
@@ -56,7 +58,17 @@ export function macroTargets(data: AppData, date: string): MacroTarget {
   const p = data.profile;
   const base = tdee(data);
   const deltaLbs = p.goalWeightLbs - p.weightLbs;
-  const targetRate = p.goalWeeks > 0 ? deltaLbs / p.goalWeeks : 0; // lbs/week (signed)
+  // Goal reached (within a pound) → hold steady at maintenance.
+  const goalReached = p.goal !== 'maintain' && Math.abs(deltaLbs) < 1;
+  // The timeline counts down from when the goal was set, so the required
+  // weekly rate stays honest as the deadline approaches.
+  const elapsedWeeks = p.goalSetAt
+    ? Math.max(0, differenceInCalendarDays(parseISO(date), parseISO(p.goalSetAt)) / 7)
+    : 0;
+  const weeksLeft = Math.max(1, Math.round((p.goalWeeks - elapsedWeeks) * 10) / 10);
+  // Clamp to healthy limits: lose ≤1% BW/week, gain ≤0.5% BW/week.
+  const rawRate = goalReached || p.goal === 'maintain' ? 0 : deltaLbs / weeksLeft;
+  const targetRate = Math.max(-p.weightLbs * 0.01, Math.min(p.weightLbs * 0.005, rawRate)); // lbs/week (signed)
   let calories = base + (targetRate * 3500) / 7;
 
   // Feedback loop: compare measured trend to target and nudge.
@@ -91,7 +103,7 @@ export function macroTargets(data: AppData, date: string): MacroTarget {
   const fat = Math.round((calories * fatPct) / 9);
   const carbs = Math.max(0, Math.round((calories - protein * 4 - fat * 9) / 4));
 
-  return { calories, protein, carbs, fat, adjustment, onPace, weeklyTrend: trend, targetRate, workoutBonus };
+  return { calories, protein, carbs, fat, adjustment, onPace, weeklyTrend: trend, targetRate, workoutBonus, weeksLeft, goalReached };
 }
 
 export function foodFor(data: AppData, id: string): FoodItem | undefined {

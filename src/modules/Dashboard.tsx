@@ -50,8 +50,17 @@ export default function Dashboard({ go }: { go: (tab: string) => void }) {
     .filter(w => w.date >= fmtDate(subDays(new Date(), 56)))
     .map(w => ({ date: format(parseISO(w.date), 'M/d'), weight: w.weightLbs }));
 
+  const hour = new Date().getHours();
+  const greeting = hour < 5 ? 'Up late' : hour < 12 ? 'Good morning' : hour < 17 ? 'Good afternoon' : 'Good evening';
+
   return (
     <div className="page">
+      <div className="greeting">
+        <h2 className="greeting-title">{greeting}{data.profile.name ? `, ${data.profile.name.split(' ')[0]}` : ''} ⚡</h2>
+        <p className="muted" style={{ margin: 0 }}>
+          {format(new Date(), 'EEEE, MMMM d')} · {rec.zone === 'green' ? 'recovery is green — make it count' : rec.zone === 'yellow' ? 'ease into it today' : 'be kind to yourself today'}
+        </p>
+      </div>
       <div className="grid grid-3">
         <Card title="Recovery">
           <div className="flex" style={{ justifyContent: 'space-between' }}>
